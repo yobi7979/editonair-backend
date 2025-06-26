@@ -739,8 +739,5 @@ def serve_project_sequence_frame(project_id, sequence_and_filename):
 if __name__ == '__main__':
     with app.app_context():
         init_db()
-    # 자동으로 로컬 IP를 찾아 host에 할당
-    hostname = socket.gethostname()
-    local_ip = socket.gethostbyname(hostname)
-    print(f"[INFO] 서버가 {local_ip}:5000 에서 실행됩니다. (외부 기기에서 접속 가능)\n")
-    socketio.run(app, host=local_ip, port=5000, debug=True, server='eventlet')
+    port = int(os.environ.get("PORT", 8080))
+    socketio.run(app, host="0.0.0.0", port=port, debug=True)
