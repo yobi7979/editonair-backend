@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Overlay Viewer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: transparent;
+        }
+        #overlay-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: {{ canvas_width }}px;
+            height: {{ canvas_height }}px;
+            pointer-events: none;
+            background: transparent;
+        }
+        .overlay-object {
+            position: absolute;
+            pointer-events: none;
+            transform-origin: center center;
+        }
+        /* 효과 애니메이션 */
+        .fadeIn {
+            animation: fadeIn 1s ease-in;
+        }
+        .fadeOut {
+            animation: fadeOut 1s ease-out;
+        }
+        .slideUpIn {
+            animation: slideUpIn 1s ease-in;
+        }
+        .slideUpOut {
+            animation: slideUpOut 1s ease-out;
+        }
+        .slideDownIn {
+            animation: slideDownIn 1s ease-in;
+        }
+        .slideDownOut {
+            animation: slideDownOut 1s ease-out;
+        }
+        .slideLeftIn {
+            animation: slideLeftIn 1s ease-in;
+        }
+        .slideLeftOut {
+            animation: slideLeftOut 1s ease-out;
+        }
+        .slideRightIn {
+            animation: slideRightIn 1s ease-in;
+        }
+        .slideRightOut {
+            animation: slideRightOut 1s ease-out;
+        }
+        .scaleIn {
+            animation: scaleIn 1s ease-in;
+        }
+        .scaleOut {
+            animation: scaleOut 1s ease-out;
+        }
+        .rotateIn {
+            animation: rotateIn 1s ease-in;
+        }
+        .rotateOut {
+            animation: rotateOut 1s ease-out;
+        }
+        .bounceIn {
+            animation: bounceIn 1s cubic-bezier(0.36, 0, 0.66, -0.56);
+        }
+        .bounceOut {
+            animation: bounceOut 1s cubic-bezier(0.36, 0, 0.66, -0.56);
+        }
+        .elasticIn {
+            animation: elasticIn 1s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        }
+        .elasticOut {
+            animation: elasticOut 1s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        }
+        .zoomIn {
+            animation: zoomIn 1s ease-in;
+        }
+        .zoomOut {
+            animation: zoomOut 1s ease-out;
+        }
+        /* 커닝 강제 적용 */
+        .overlay-object * {
+            letter-spacing: 0px !important;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+        @keyframes slideUpIn {
+            from { transform: translateY(100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        @keyframes slideUpOut {
+            from { transform: translateY(0); opacity: 1; }
+            to { transform: translateY(-100%); opacity: 0; }
+        }
+        @keyframes slideDownIn {
+            from { transform: translateY(-100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        @keyframes slideDownOut {
+            from { transform: translateY(0); opacity: 1; }
+            to { transform: translateY(100%); opacity: 0; }
+        }
+        @keyframes slideLeftIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes slideLeftOut {
+            from { transform: translateX(0); opacity: 1; }
+            to { transform: translateX(-100%); opacity: 0; }
+        }
+        @keyframes slideRightIn {
+            from { transform: translateX(-100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes slideRightOut {
+            from { transform: translateX(0); opacity: 1; }
+            to { transform: translateX(100%); opacity: 0; }
+        }
+        @keyframes scaleIn {
+            from { transform: scale(0); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+        @keyframes scaleOut {
+            from { transform: scale(1); opacity: 1; }
+            to { transform: scale(0); opacity: 0; }
+        }
+        @keyframes rotateIn {
+            from { transform: rotate(360deg); opacity: 0; }
+            to { transform: rotate(0deg); opacity: 1; }
+        }
+        @keyframes rotateOut {
+            from { transform: rotate(0deg); opacity: 1; }
+            to { transform: rotate(360deg); opacity: 0; }
+        }
+        @keyframes bounceIn {
+            0% { transform: translateY(100%); opacity: 0; }
+            50% { transform: translateY(-20%); opacity: 1; }
+            70% { transform: translateY(10%); opacity: 1; }
+            85% { transform: translateY(-5%); opacity: 1; }
+            100% { transform: translateY(0); opacity: 1; }
+        }
+        @keyframes bounceOut {
+            0% { transform: translateY(0); opacity: 1; }
+            50% { transform: translateY(-20%); opacity: 1; }
+            70% { transform: translateY(10%); opacity: 1; }
+            85% { transform: translateY(-5%); opacity: 1; }
+            100% { transform: translateY(100%); opacity: 0; }
+        }
+        @keyframes elasticIn {
+            0% { transform: scale(0.3); opacity: 0; }
+            50% { transform: scale(1.2); opacity: 1; }
+            70% { transform: scale(0.9); opacity: 1; }
+            85% { transform: scale(1.05); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        @keyframes elasticOut {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.2); opacity: 1; }
+            70% { transform: scale(0.9); opacity: 1; }
+            85% { transform: scale(1.05); opacity: 1; }
+            100% { transform: scale(0.3); opacity: 0; }
+        }
+        @keyframes zoomIn {
+            from { transform: scale(0); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+        @keyframes zoomOut {
+            from { transform: scale(1); opacity: 1; }
+            to { transform: scale(0); opacity: 0; }
+        }
+    </style>
+</head>
+<body>
+    <div id="overlay-container"></div>
+    <script>
+        // 모션 관리 클래스
+        class MotionManager {
+            constructor(container) {
+                this.container = container;
+                this.objects = new Map();
+                this.currentScene = null;
+            }
+
+            // 인모션 적용
+            applyInMotion(element, obj) {
+                const motion = obj.in_motion || { type: 'none' };
+                const style = this.getMotionStyle(motion, true);
+                Object.assign(element.style, style);
+                const className = `${motion.type === 'none' ? 'fade' : motion.type}In`;
+                element.classList.add(className);
+                return new Promise((resolve) => {
+                    element.addEventListener('animationend', () => {
+                        element.classList.remove(className);
+                        element.style.animation = 'none';
+                        if (style.transform) element.style.transform = style.transform;
+                        if (style.opacity) element.style.opacity = style.opacity;
+                        element.dataset.inMotionCompleted = 'true';
+                        this.checkAllInMotionsCompleted();
+                        resolve();
+                    }, { once: true });
+                });
+            }
+
+            // 아웃모션 적용
+            applyOutMotion(element, obj) {
+                const motion = obj.out_motion || { type: 'none' };
+                const style = this.getMotionStyle(motion, false);
+                Object.assign(element.style, style);
+                const className = `${motion.type === 'none' ? 'fade' : motion.type}Out`;
+                element.classList.add(className);
+                return new Promise((resolve) => {
+                    element.addEventListener('animationend', () => {
+                        element.classList.remove(className);
+                        element.style.animation = '';
+                        element.style.animationDuration = '';
+                        element.style.animationDelay = '';
+                        element.style.animationFillMode = '';
+                        element.style.animationTimingFunction = '';
+                        element.style.display = 'none';
+                        resolve();
+                    }, { once: true });
+                });
+            }
+
+            // 모든 인모션 완료 확인
+            checkAllInMotionsCompleted() {
+                const allElements = this.container.querySelectorAll('.overlay-object');
+                const allCompleted = Array.from(allElements).every(el => el.dataset.inMotionCompleted === 'true');
+                
+                if (allCompleted) {
+                    console.log('All in-motions completed, waiting for out-motion trigger...');
+                }
+            }
+
+            // 모든 아웃모션 완료 대기
+            async waitForAllOutMotions() {
+                const elements = this.container.querySelectorAll('.overlay-object');
+                const outMotionPromises = [];
+                
+                console.log('Checking out motions for', elements.length, 'elements');
+                console.log('Current scene:', this.currentScene);
+                console.log('Current scene objects:', this.currentScene?.objects);
+
+                elements.forEach(element => {
+                    const objId = element.getAttribute('data-object-id');
+                    console.log('Element objId:', objId);
+                    console.log('Looking for object with ID:', objId);
+                    console.log('Available object IDs:', this.currentScene?.objects?.map(o => o.id));
+                    
+                    const obj = this.currentScene.objects.find(o => o.id === parseInt(objId));
+                    console.log('Found object:', obj);
+                    
+                    if (obj && obj.out_motion && obj.out_motion.type !== 'none') {
+                        console.log('Applying out motion for object:', obj.id, 'type:', obj.out_motion.type);
+                        outMotionPromises.push(this.applyOutMotion(element, obj));
+                    } else {
+                        console.log('No out motion for object:', objId, 'out_motion:', obj?.out_motion);
+                        // 아웃모션이 없는 객체도 display:none 처리
+                        outMotionPromises.push(Promise.resolve().then(() => {
+                            element.style.display = 'none';
+                        }));
+                    }
+                });
+
+                console.log('Total out motion promises:', outMotionPromises.length);
+
+                if (outMotionPromises.length === 0) {
+                    return true;
+                }
+
+                await Promise.all(outMotionPromises);
+                // 모든 오브젝트에 대해 display:none을 한 번 더 보장적으로 처리
+                const allElements = this.container.querySelectorAll('.overlay-object');
+                allElements.forEach(element => {
+                    element.style.display = 'none';
+                });
+                return true;
+            }
+
+            // 모션 스타일 계산
+            getMotionStyle(motion, isIn) {
+                // 'none'도 2프레임(0.033초)짜리 페이드 효과로 처리
+                let type = motion?.type || 'none';
+                let duration = (type === 'none') ? 0.033 : (motion.duration || 1);
+                let delay = motion.delay || 0;
+                let easing = motion.easing || 'ease';
+                let transform = '';
+                let opacity = '';
+                switch (type) {
+                    case 'none':
+                    case 'fade':
+                        opacity = isIn ? '1' : '0';
+                        break;
+                    case 'slide_up':
+                        transform = isIn ? 'translateY(0)' : 'translateY(100%)';
+                        opacity = isIn ? '0' : '1';
+                        break;
+                    case 'slide_down':
+                        transform = isIn ? 'translateY(0)' : 'translateY(-100%)';
+                        opacity = isIn ? '0' : '1';
+                        break;
+                    case 'slide_left':
+                        transform = isIn ? 'translateX(0)' : 'translateX(100%)';
+                        opacity = isIn ? '0' : '1';
+                        break;
+                    case 'slide_right':
+                        transform = isIn ? 'translateX(0)' : 'translateX(-100%)';
+                        opacity = isIn ? '0' : '1';
+                        break;
+                    case 'zoom_in':
+                        transform = isIn ? 'scale(1)' : 'scale(0)';
+                        opacity = isIn ? '0' : '1';
+                        break;
+                    case 'zoom_out':
+                        transform = isIn ? 'scale(1)' : 'scale(2)';
+                        opacity = isIn ? '0' : '1';
+                        break;
+                    default:
+                        opacity = '';
+                        break;
+                }
+                return {
+                    animation: `${type === 'none' ? 'fade' : type}${isIn ? 'In' : 'Out'} ${duration}s ${easing} ${delay}s`,
+                    animationFillMode: 'forwards',
+                    animationTimingFunction: easing,
+                    transform: transform,
+                    opacity: opacity
+                };
+            }
+
+            // 씬 업데이트
+            updateScene(scene, skipInMotion = false) {
+                this.currentScene = scene;
+                this.container.innerHTML = '';
+                this.objects.clear();
+                
+                [...(scene.objects || [])]
+                  .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+                  .forEach(obj => {
+                    const element = createObjectElement(obj);
+                    if (element) {
+                        this.container.appendChild(element);
+                        this.objects.set(obj.id, element);
+                        if (!skipInMotion) {
+                            // startTime, endTime 적용
+                            const timing = typeof obj.timing === 'string' ? JSON.parse(obj.timing) : (obj.timing || {});
+                            const startTime = timing.startTime || 0;
+                            const endTime = timing.endTime || (timing.duration || 5);
+
+                            // 인모션 시작 전에는 숨김
+                            element.style.display = 'none';
+
+                            // 인모션(등장)
+                            setTimeout(() => {
+                                element.style.display = 'block';
+                                this.applyInMotion(element, obj);
+                            }, startTime * 1000);
+
+                            // 아웃모션은 scene_out 이벤트에서만 실행되도록 예약하지 않음
+                            // (endTime 정보는 저장해두기만 함)
+                            element.dataset.endTime = endTime;
+                        } else {
+                            // 인모션 스킵 시 최종 상태로 바로 설정
+                            if (obj.in_motion && obj.in_motion.type !== 'none') {
+                                const style = this.getMotionStyle(obj.in_motion, true);
+                                if (style.transform) element.style.transform = style.transform;
+                                if (style.opacity) element.style.opacity = style.opacity;
+                            }
+                            element.dataset.inMotionCompleted = 'true';
+                        }
+                    }
+                  });
+            }
+        }
+
+        // 전역 변수 및 초기화
+        const socket = io();
+        const container = document.getElementById('overlay-container');
+        const motionManager = new MotionManager(container);
+        let currentScene = {{ scene|tojson if scene else 'null' }};
+        let skipInMotion = sessionStorage.getItem('skipInMotion') === 'true';
+
+        // 초기 씬 데이터 로드
+        if (currentScene) {
+            motionManager.updateScene(currentScene, skipInMotion);
+            // 플래그 초기화
+            sessionStorage.removeItem('skipInMotion');
+        }
+
+        // 웹소켓 이벤트 핸들러
+        socket.on('connect', () => {
+            const projectId = {{ project.id }};
+            {% if scene %}
+            const sceneId = {{ scene.id }};
+            socket.emit('join_scene', { scene_id: sceneId });
+            {% else %}
+            socket.emit('join_project', { project_id: projectId });
+            {% endif %}
+        });
+
+        socket.on('scene_update', (scene) => {
+            if (scene.id === currentScene?.id) {
+                currentScene = scene;
+                motionManager.updateScene(scene);
+            }
+        });
+
+        socket.on('scene_change', async function(data) {
+            console.log('Scene change event received:', data);
+            
+            // 모든 인모션이 완료될 때까지 대기
+            const allElements = container.querySelectorAll('.overlay-object');
+            const allCompleted = Array.from(allElements).every(el => el.dataset.inMotionCompleted === 'true');
+            
+            if (!allCompleted) {
+                console.log('Waiting for all in-motions to complete...');
+                return;
+            }
+
+            // 아웃모션 적용 및 완료 대기
+            await motionManager.waitForAllOutMotions();
+            
+            // 페이지 새로고침
+            setTimeout(() => {
+                window.location.reload();
+            }, 100);
+        });
+
+        socket.on('scene_out', async function(data) {
+            console.log('Scene out event received:', data);
+            console.log('Current scene before out motion:', currentScene);
+            console.log('MotionManager current scene:', motionManager.currentScene);
+            
+            // 아웃모션 적용 및 완료 대기
+            await motionManager.waitForAllOutMotions();
+            
+            // 아웃모션 완료 후 객체들 숨기기
+            const elements = container.querySelectorAll('.overlay-object');
+            elements.forEach(element => {
+                element.style.display = 'none';
+            });
+
+            // 더미 씬으로 교체
+            console.log('Loading dummy scene...');
+            try {
+                const response = await fetch('/api/dummy-scene');
+                const dummyScene = await response.json();
+                console.log('Dummy scene loaded:', dummyScene);
+                
+                // 더미 씬으로 업데이트 (인모션 스킵)
+                currentScene = dummyScene;
+                motionManager.updateScene(dummyScene, true); // skipInMotion = true
+                
+                console.log('Dummy scene applied - no objects to display');
+            } catch (error) {
+                console.error('Error loading dummy scene:', error);
+            }
+        });
+
+        // 객체 생성 함수
+        function createObjectElement(obj) {
+            console.log('Creating element for object:', obj);
+            const element = document.createElement('div');
+            element.className = 'overlay-object';
+            element.id = `obj-${obj.id}`;
+            element.setAttribute('data-object-id', obj.id);
+            
+            // 기본 스타일 설정
+            element.style.position = 'absolute';
+            element.style.left = '0px';
+            element.style.top = '0px';
+            
+            // 객체 타입에 따른 처리
+            switch (obj.type) {
+                case 'text':
+                    console.log('Text object properties:', obj.properties);
+                    
+                    // 텍스트 컨테이너 생성
+                    const textContainer = document.createElement('div');
+                    textContainer.style.display = 'flex';
+                    textContainer.style.alignItems = 'center';
+                    textContainer.style.justifyContent = obj.properties.textAlign === 'left' ? 'flex-start' : 
+                                                       obj.properties.textAlign === 'right' ? 'flex-end' : 'center';
+                    textContainer.style.width = '100%';
+                    textContainer.style.height = '100%';
+                    textContainer.style.boxSizing = 'border-box';
+                    
+                    // 텍스트 배경 설정
+                    if (obj.properties.useTextBackground) {
+                        textContainer.style.backgroundColor = obj.properties.textBackgroundColor || '#000000';
+                        textContainer.style.borderRadius = `${obj.properties.textBackgroundBorderRadius || 0}px`;
+                        textContainer.style.padding = `${obj.properties.textBackgroundPadding || 8}px`;
+                    }
+                    
+                    // 텍스트 요소 생성
+                    const textElement = document.createElement('div');
+                    textElement.textContent = obj.properties.content || '';
+                    textElement.style.color = obj.properties.color || '#ffffff';
+                    textElement.style.fontSize = typeof obj.properties.fontSize === 'number'
+                        ? obj.properties.fontSize + 'px'
+                        : (obj.properties.fontSize || '24px');
+                    textElement.style.fontFamily = obj.properties.fontFamily || 'Arial';
+                    textElement.style.fontWeight = obj.properties.fontWeight || 'normal';
+                    textElement.style.textAlign = obj.properties.textAlign || 'left';
+                    textElement.style.lineHeight = obj.properties.lineHeight !== undefined ? obj.properties.lineHeight : '1.2';
+                    textElement.style.whiteSpace = 'pre-wrap';
+                    textElement.style.wordBreak = 'break-word';
+                    textElement.style.width = '100%';
+                    textElement.style.minWidth = '50px';
+                    textElement.style.margin = '0';
+                    textElement.style.padding = '0';
+                    textElement.style.letterSpacing = (obj.properties.letterSpacing !== undefined ? obj.properties.letterSpacing : 0) + 'px';
+                    
+                    // 텍스트 테두리 설정
+                    if (obj.properties.useTextBorder) {
+                        textElement.style.webkitTextStrokeWidth = `${obj.properties.textBorderWidth || 1}px`;
+                        textElement.style.webkitTextStrokeColor = obj.properties.textBorderColor || '#FFFFFF';
+                    }
+                    
+                    // 텍스트 그림자 설정
+                    if (obj.properties.useTextShadow) {
+                        textElement.style.textShadow = `${obj.properties.textShadowOffsetX || 0}px ${obj.properties.textShadowOffsetY || 0}px ${obj.properties.textShadowBlur || 0}px ${obj.properties.textShadowColor || '#000000'}`;
+                    }
+                    
+                    // 컨테이너에 텍스트 요소 추가
+                    textContainer.appendChild(textElement);
+                    element.appendChild(textContainer);
+                    break;
+                    
+                case 'image':
+                    const img = document.createElement('img');
+                    img.src = obj.properties.src || '';
+                    img.style.width = '100%';
+                    img.style.height = '100%';
+                    img.style.objectFit = 'contain';
+                    element.appendChild(img);
+                    break;
+                    
+                case 'shape': {
+                    // 그라데이션 적용
+                    if (obj.properties.fillType === 'gradient' && obj.properties.gradient && obj.properties.gradient.stops) {
+                        const stops = obj.properties.gradient.stops;
+                        // rgba 변환 함수
+                        function toRgba(color, opacity) {
+                            // hex -> r,g,b
+                            if (color.startsWith('#')) {
+                                let hex = color.replace('#', '');
+                                if (hex.length === 3) hex = hex.split('').map(x => x + x).join('');
+                                const r = parseInt(hex.substring(0,2), 16);
+                                const g = parseInt(hex.substring(2,4), 16);
+                                const b = parseInt(hex.substring(4,6), 16);
+                                return `rgba(${r},${g},${b},${opacity ?? 1})`;
+                            }
+                            return color;
+                        }
+                        // linear-gradient string 생성
+                        const gradStr = `linear-gradient(to right, ${stops.map(s => `${toRgba(s.color, s.opacity)} ${s.position*100 || 0}%`).join(', ')})`;
+                        element.style.background = gradStr;
+                    } else {
+                        element.style.backgroundColor = obj.properties.color || '#ffffff';
+                    }
+                    element.style.borderRadius = obj.properties.shapeType === 'circle' || obj.properties.shapeType === 'ellipse' ? '50%' : '0';
+
+                    // 테두리(Border) 적용
+                    if (obj.properties.useShapeBorder) {
+                        element.style.border = `${obj.properties.shapeBorderWidth || 1}px ${obj.properties.shapeBorderStyle || 'solid'} ${obj.properties.shapeBorderColor || '#FFFFFF'}`;
+                    } else {
+                        element.style.border = 'none';
+                    }
+
+                    // 그림자(Shadow) 적용
+                    if (obj.properties.useShapeShadow) {
+                        element.style.boxShadow = `${obj.properties.shapeShadowOffsetX || 0}px ${obj.properties.shapeShadowOffsetY || 0}px ${obj.properties.shapeShadowBlur || 0}px ${obj.properties.shapeShadowColor || '#000000'}`;
+                    } else {
+                        element.style.boxShadow = 'none';
+                    }
+                    break;
+                }
+
+                case 'timer':
+                    // 타이머 컨테이너 생성
+                    const timerContainer = document.createElement('div');
+                    timerContainer.style.display = 'flex';
+                    timerContainer.style.alignItems = 'center';
+                    timerContainer.style.justifyContent = obj.properties.textAlign === 'left' ? 'flex-start' : 
+                                                       obj.properties.textAlign === 'right' ? 'flex-end' : 'center';
+                    timerContainer.style.width = '100%';
+                    timerContainer.style.height = '100%';
+                    timerContainer.style.boxSizing = 'border-box';
+                    
+                    // 타이머 배경 설정
+                    if (obj.properties.useBackground) {
+                        timerContainer.style.backgroundColor = obj.properties.backgroundColor || '#000000';
+                        timerContainer.style.borderRadius = `${obj.properties.backgroundBorderRadius || 0}px`;
+                        timerContainer.style.padding = `${obj.properties.backgroundPadding || 8}px`;
+                    }
+                    
+                    // 타이머 요소 생성
+                    const timerElement = document.createElement('div');
+                    timerElement.className = 'timer-display';
+                    timerElement.style.color = obj.properties.color || '#ffffff';
+                    timerElement.style.fontSize = typeof obj.properties.fontSize === 'number'
+                        ? obj.properties.fontSize + 'px'
+                        : (obj.properties.fontSize || '48px');
+                    timerElement.style.fontFamily = obj.properties.fontFamily || 'Arial';
+                    timerElement.style.fontWeight = obj.properties.fontWeight || 'bold';
+                    timerElement.style.textAlign = obj.properties.textAlign || 'center';
+                    timerElement.style.lineHeight = obj.properties.lineHeight !== undefined ? obj.properties.lineHeight : '1';
+                    timerElement.style.width = '100%';
+                    timerElement.style.margin = '0';
+                    timerElement.style.padding = '0';
+                    timerElement.style.letterSpacing = (obj.properties.letterSpacing !== undefined ? obj.properties.letterSpacing : 0) + 'px';
+
+                    // 타이머 초기화
+                    let timeLeft = obj.properties.duration || 60;
+                    let isRunning = false;
+                    let timerInterval;
+
+                    function updateTimerDisplay() {
+                        const minutes = Math.floor(timeLeft / 60);
+                        const seconds = timeLeft % 60;
+                        timerElement.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                    }
+
+                    function startTimer() {
+                        if (!isRunning) {
+                            isRunning = true;
+                            timerInterval = setInterval(() => {
+                                if (timeLeft > 0) {
+                                    timeLeft--;
+                                    updateTimerDisplay();
+                                } else {
+                                    clearInterval(timerInterval);
+                                    isRunning = false;
+                                    // 타이머 종료 시 이벤트 발생
+                                    socket.emit('timer_complete', { timer_id: obj.id });
+                                }
+                            }, 1000);
+                        }
+                    }
+
+                    function stopTimer() {
+                        if (isRunning) {
+                            clearInterval(timerInterval);
+                            isRunning = false;
+                        }
+                    }
+
+                    function resetTimer() {
+                        stopTimer();
+                        timeLeft = obj.properties.duration || 60;
+                        updateTimerDisplay();
+                    }
+
+                    // 타이머 컨트롤 이벤트 리스너
+                    socket.on('timer_control', (data) => {
+                        if (data.timer_id === obj.id) {
+                            switch (data.action) {
+                                case 'start':
+                                    startTimer();
+                                    break;
+                                case 'stop':
+                                    stopTimer();
+                                    break;
+                                case 'reset':
+                                    resetTimer();
+                                    break;
+                            }
+                        }
+                    });
+
+                    // 초기 타이머 표시
+                    updateTimerDisplay();
+                    timerContainer.appendChild(timerElement);
+                    element.appendChild(timerContainer);
+                    break;
+            }
+            
+            // 위치 및 크기 설정
+            element.style.left = `${obj.properties.x || 0}px`;
+            element.style.top = `${obj.properties.y || 0}px`;
+            element.style.width = `${obj.properties.width || 100}px`;
+            element.style.height = `${obj.properties.height || 100}px`;
+            
+            // 투명도 설정
+            element.style.opacity = obj.properties.opacity !== undefined ? obj.properties.opacity : 1;
+            
+            // 회전 설정
+            if (obj.properties.rotation) {
+                element.style.transform = `rotate(${obj.properties.rotation}deg)`;
+            }
+            
+            return element;
+        }
+    </script>
+</body>
+</html> 
