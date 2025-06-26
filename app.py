@@ -8,9 +8,12 @@ from werkzeug.utils import secure_filename
 from urllib.parse import unquote
 from PIL import Image
 import socket
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_cors import CORS
 
 # Initialize Flask app
 app = Flask(__name__)
+CORS(app)
 
 # CORS 미들웨어 추가
 @app.after_request
@@ -25,7 +28,7 @@ socketio = SocketIO(app, async_mode='threading', cors_allowed_origins="*")  # In
 
 # Configure database
 basedir = os.path.abspath(os.path.dirname(__file__))
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'editor_data.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///app.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Initialize SQLAlchemy
@@ -89,6 +92,16 @@ class Object(db.Model):
 
     def __repr__(self):
         return f'<Object {self.name} ({self.type})>'
+
+
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(128), nullable=False)
+    is_admin = db.Column(db.Boolean, default=False)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
 
 
 # --- Serialization/Deserialization Helpers ---
@@ -769,6 +782,59 @@ def delete_project_image(project_id, filename):
         return jsonify({'message': 'Deleted'}), 200
     else:
         return jsonify({'error': 'File not found'}), 404
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.json
+    username = data.get('username')
+    password = data.get('password')
+    user = User.query.filter_by(username=username).first()
+    if user and user.check_password(password):
+        return jsonify({
+            'success': True,
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'is_admin': user.is_admin
+            }
+        })
+    return jsonify({'success': False, 'message': '아이디 또는 비밀번호가 올바르지 않습니다.'}), 401
+
+@app.route('/api/users', methods=['GET'])
+def get_users():
+    users = User.query.all()
+    return jsonify([
+        {'id': u.id, 'username': u.username, 'is_admin': u.is_admin}
+        for u in users
+    ])
+
+@app.route('/api/users', methods=['POST'])
+def add_user():
+    data = request.json
+    username = data.get('username')
+    password = data.get('password')
+    is_admin = data.get('is_admin', False)
+    if not username or not password:
+        return jsonify({'success': False, 'message': '아이디와 비밀번호를 입력하세요.'}), 400
+    if User.query.filter_by(username=username).first():
+        return jsonify({'success': False, 'message': '이미 존재하는 아이디입니다.'}), 409
+    user = User(
+        username=username,
+        password_hash=generate_password_hash(password),
+        is_admin=is_admin
+    )
+    db.session.add(user)
+    db.session.commit()
+    return jsonify({'success': True, 'user': {'id': user.id, 'username': user.username, 'is_admin': user.is_admin}})
+
+@app.route('/api/users/<int:user_id>', methods=['DELETE'])
+def delete_user(user_id):
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'success': False, 'message': '사용자를 찾을 수 없습니다.'}), 404
+    db.session.delete(user)
+    db.session.commit()
+    return jsonify({'success': True})
 
 # --- Main Entry Point ---
 
