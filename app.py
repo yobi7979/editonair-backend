@@ -13,18 +13,18 @@ from flask_cors import CORS
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins="http://localhost:5173")  # 개발용, 배포시 실제 프론트 주소로 변경
 
 # CORS 미들웨어 추가
 @app.after_request
 def after_request(response):
-    response.headers.add('Access-Control-Allow-Origin', '*')
+    # response.headers.add('Access-Control-Allow-Origin', '*')  # 삭제
     response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
     response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
     return response
 
 # SocketIO를 threading 모드로 명시
-socketio = SocketIO(app, async_mode='threading', cors_allowed_origins="*")  # Initialize SocketIO
+socketio = SocketIO(app, async_mode='threading', cors_allowed_origins="http://localhost:5173")  # Initialize SocketIO
 
 # Configure database
 basedir = os.path.abspath(os.path.dirname(__file__))
