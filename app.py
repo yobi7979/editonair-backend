@@ -430,15 +430,15 @@ def overlay_scene(project_name, scene_id):
 @app.route('/api/scenes/<int:scene_id>/push', methods=['POST'])
 def push_scene(scene_id):
     try:
-    global current_pushed_scene_id
-    scene = Scene.query.get_or_404(scene_id)
-    current_pushed_scene_id = scene_id
+        global current_pushed_scene_id
+        scene = Scene.query.get_or_404(scene_id)
+        current_pushed_scene_id = scene_id
         print(f"Scene {scene_id} pushed successfully")
         # broadcast 옵션 없이 emit
-    socketio.emit('scene_change', {
-        'scene_id': scene_id,
-        'transition': 'fade',
-        'duration': 1.0,
+        socketio.emit('scene_change', {
+            'scene_id': scene_id,
+            'transition': 'fade',
+            'duration': 1.0,
             'clear_effects': True
         })
         return jsonify({'status': 'success', 'scene_id': scene_id})
@@ -449,13 +449,13 @@ def push_scene(scene_id):
 @app.route('/api/scenes/<int:scene_id>/out', methods=['POST'])
 def out_scene(scene_id):
     try:
-    scene = Scene.query.get_or_404(scene_id)
+        scene = Scene.query.get_or_404(scene_id)
         print(f"Scene {scene_id} out successfully")
         # broadcast 옵션 없이 emit
-    socketio.emit('scene_out', {
-        'scene_id': scene_id,
-        'transition': 'fade',
-        'duration': 1.0
+        socketio.emit('scene_out', {
+            'scene_id': scene_id,
+            'transition': 'fade',
+            'duration': 1.0
         })
         return jsonify({'status': 'success', 'scene_id': scene_id})
     except Exception as e:
@@ -466,9 +466,9 @@ def out_scene(scene_id):
 # --- Helper function to initialize database ---
 def init_db():
     try:
-    with app.app_context():
-        db.create_all()
-        print("Database initialized successfully!")
+        with app.app_context():
+            db.create_all()
+            print("Database initialized successfully!")
     except Exception as e:
         print(f"Database initialization error: {e}")
         # 프로덕션에서는 에러를 무시하고 계속 진행
