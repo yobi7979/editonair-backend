@@ -412,13 +412,13 @@ def push_scene(scene_id):
         current_pushed_scene_id = scene_id
         print(f"Scene {scene_id} pushed successfully")
         
-        # WebSocket 기능 일시적으로 비활성화
-        # socketio.emit('scene_change', {
-        #     'scene_id': scene_id,
-        #     'transition': 'fade',
-        #     'duration': 1.0,
-        #     'clear_effects': True
-        # }, broadcast=True)
+        # WebSocket 기능 다시 활성화
+        socketio.emit('scene_change', {
+            'scene_id': scene_id,
+            'transition': 'fade',
+            'duration': 1.0,
+            'clear_effects': True
+        }, broadcast=True)
         
         return jsonify({'status': 'success', 'scene_id': scene_id})
     except Exception as e:
@@ -431,12 +431,12 @@ def out_scene(scene_id):
         scene = Scene.query.get_or_404(scene_id)
         print(f"Scene {scene_id} out successfully")
         
-        # WebSocket 기능 일시적으로 비활성화
-        # socketio.emit('scene_out', {
-        #     'scene_id': scene_id,
-        #     'transition': 'fade',
-        #     'duration': 1.0
-        # }, broadcast=True)
+        # WebSocket 기능 다시 활성화
+        socketio.emit('scene_out', {
+            'scene_id': scene_id,
+            'transition': 'fade',
+            'duration': 1.0
+        }, broadcast=True)
         
         return jsonify({'status': 'success', 'scene_id': scene_id})
     except Exception as e:
