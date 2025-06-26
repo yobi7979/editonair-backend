@@ -1,7 +1,6 @@
 import os
 from flask import Flask, jsonify, request, render_template, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
-from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 import datetime
 import json
