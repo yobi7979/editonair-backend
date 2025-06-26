@@ -13,7 +13,7 @@ import eventlet
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+CORS(app, origins="*", supports_credentials=False)
 socketio = SocketIO(app, cors_allowed_origins="*")  # Initialize SocketIO
 
 # Configure database
