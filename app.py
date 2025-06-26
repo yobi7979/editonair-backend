@@ -825,8 +825,5 @@ if __name__ == '__main__':
     # Railway에서는 일반 Flask 앱으로 실행
     app.run(host="0.0.0.0", port=port, debug=False)
 
-# 프로젝트명으로 DB에서 조회
-
 def get_project_by_name(project_name):
-    from models import Project  # 또는 적절한 위치에서 import
     return Project.query.filter_by(name=project_name).first()
