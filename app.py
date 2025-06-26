@@ -8,7 +8,6 @@ from werkzeug.utils import secure_filename
 from urllib.parse import unquote
 from PIL import Image
 import socket
-import eventlet
 
 # Initialize Flask app
 app = Flask(__name__)
