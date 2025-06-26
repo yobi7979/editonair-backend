@@ -759,6 +759,17 @@ def serve_project_sequence_frame(project_id, sequence_and_filename):
     sequences_path = os.path.join(basedir, '..', 'projects', str(project_id), 'library', 'sequences')
     return send_from_directory(sequences_path, decoded_path)
 
+@app.route('/api/projects/<int:project_id>/library/images/<filename>', methods=['DELETE'])
+def delete_project_image(project_id, filename):
+    images_path = os.path.join(basedir, '..', 'projects', str(project_id), 'library', 'images')
+    decoded_filename = unquote(filename)
+    file_path = os.path.join(images_path, decoded_filename)
+    if os.path.exists(file_path):
+        os.remove(file_path)
+        return jsonify({'message': 'Deleted'}), 200
+    else:
+        return jsonify({'error': 'File not found'}), 404
+
 # --- Main Entry Point ---
 
 # Railway에서 작동하도록 전역에서 초기화
