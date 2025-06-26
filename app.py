@@ -429,9 +429,14 @@ def out_scene(scene_id):
 
 # --- Helper function to initialize database ---
 def init_db():
-    with app.app_context():
-        db.create_all()
-    print("Database initialized!")
+    try:
+        with app.app_context():
+            db.create_all()
+        print("Database initialized successfully!")
+    except Exception as e:
+        print(f"Database initialization error: {e}")
+        # 프로덕션에서는 에러를 무시하고 계속 진행
+        pass
 
 
 @app.route('/api/scenes/<int:scene_id>/objects', methods=['POST'])
@@ -746,5 +751,5 @@ def serve_project_sequence_frame(project_id, sequence_and_filename):
 if __name__ == '__main__':
     with app.app_context():
         init_db()
-    port = int(os.environ.get("PORT", 8080))
-    socketio.run(app, host="0.0.0.0", port=port, debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    socketio.run(app, host="0.0.0.0", port=port, debug=False)
