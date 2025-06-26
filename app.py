@@ -21,6 +21,10 @@ def after_request(response):
     response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
     return response
 
+# (Flask-CORS import/use 흔적이 있다면 아래처럼 주석 처리)
+# from flask_cors import CORS
+# CORS(app)
+
 # SocketIO를 threading 모드로 명시
 socketio = SocketIO(app, async_mode='threading', cors_allowed_origins="*")  # Initialize SocketIO
 
@@ -48,10 +52,19 @@ def safe_unicode_filename(filename):
     return ''.join(c for c in filename if c.isalnum() or c in keepchars or ord(c) > 127)
 
 def slugify(name):
+    if not name:
+        return 'untitled'
     name = name.lower()
     name = re.sub(r'[^a-z0-9가-힣-_]', '-', name)
     name = re.sub(r'-+', '-', name)
-    return name.strip('-')
+    return name.strip('-') or 'untitled'
+
+# 프로젝트명으로 폴더 생성 및 경로 반환
+
+def get_project_folder(project_name):
+    basedir = os.path.abspath(os.path.dirname(__file__))
+    folder = slugify(project_name)
+    return os.path.join(basedir, '..', 'projects', folder)
 
 # --- Database Models ---
 
@@ -811,13 +824,6 @@ if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     # Railway에서는 일반 Flask 앱으로 실행
     app.run(host="0.0.0.0", port=port, debug=False)
-
-# 프로젝트명으로 폴더 생성 및 경로 반환
-
-def get_project_folder(project_name):
-    basedir = os.path.abspath(os.path.dirname(__file__))
-    folder = slugify(project_name)
-    return os.path.join(basedir, '..', 'projects', folder)
 
 # 프로젝트명으로 DB에서 조회
 
