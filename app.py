@@ -130,6 +130,10 @@ def object_to_dict(obj):
 
 # --- API Endpoints ---
 
+@app.route('/health', methods=['GET'])
+def health_check():
+    return jsonify({'status': 'healthy', 'message': 'Server is running'})
+
 @app.route('/api/projects', methods=['GET', 'POST'])
 def handle_projects():
     if request.method == 'POST':
@@ -406,14 +410,17 @@ def push_scene(scene_id):
         scene = Scene.query.get_or_404(scene_id)
         # 현재 푸시된 씬 ID 업데이트
         current_pushed_scene_id = scene_id
-        # 웹소켓을 통해 모든 클라이언트에게 씬 변경 알림
-        socketio.emit('scene_change', {
-            'scene_id': scene_id,
-            'transition': 'fade',
-            'duration': 1.0,
-            'clear_effects': True  # 효과 초기화 플래그 추가
-        }, broadcast=True)
-        return jsonify({'status': 'success'})
+        print(f"Scene {scene_id} pushed successfully")
+        
+        # WebSocket 기능 일시적으로 비활성화
+        # socketio.emit('scene_change', {
+        #     'scene_id': scene_id,
+        #     'transition': 'fade',
+        #     'duration': 1.0,
+        #     'clear_effects': True
+        # }, broadcast=True)
+        
+        return jsonify({'status': 'success', 'scene_id': scene_id})
     except Exception as e:
         print(f"Error in push_scene: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -422,13 +429,16 @@ def push_scene(scene_id):
 def out_scene(scene_id):
     try:
         scene = Scene.query.get_or_404(scene_id)
-        # 웹소켓을 통해 모든 클라이언트에게 아웃 모션 알림
-        socketio.emit('scene_out', {
-            'scene_id': scene_id,
-            'transition': 'fade',
-            'duration': 1.0
-        }, broadcast=True)
-        return jsonify({'status': 'success'})
+        print(f"Scene {scene_id} out successfully")
+        
+        # WebSocket 기능 일시적으로 비활성화
+        # socketio.emit('scene_out', {
+        #     'scene_id': scene_id,
+        #     'transition': 'fade',
+        #     'duration': 1.0
+        # }, broadcast=True)
+        
+        return jsonify({'status': 'success', 'scene_id': scene_id})
     except Exception as e:
         print(f"Error in out_scene: {str(e)}")
         return jsonify({'error': str(e)}), 500
