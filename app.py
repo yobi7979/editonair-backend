@@ -30,6 +30,9 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 # Initialize SQLAlchemy
 db = SQLAlchemy(app)
 
+# Global variable for tracking pushed scene
+current_pushed_scene_id = None
+
 ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
 def allowed_image_file(filename):
@@ -353,9 +356,6 @@ def delete_scene(scene_id):
     db.session.commit()
     return jsonify({'message': 'Scene deleted successfully'})
 
-# 현재 푸시된 씬 ID를 저장할 변수
-current_pushed_scene_id = None
-
 @app.route('/overlay/project/<int:project_id>')
 def overlay_project(project_id):
     try:
@@ -401,29 +401,37 @@ def overlay_scene(project_id, scene_id):
 
 @app.route('/api/scenes/<int:scene_id>/push', methods=['POST'])
 def push_scene(scene_id):
-    global current_pushed_scene_id
-    scene = Scene.query.get_or_404(scene_id)
-    # 현재 푸시된 씬 ID 업데이트
-    current_pushed_scene_id = scene_id
-    # 웹소켓을 통해 모든 클라이언트에게 씬 변경 알림
-    socketio.emit('scene_change', {
-        'scene_id': scene_id,
-        'transition': 'fade',
-        'duration': 1.0,
-        'clear_effects': True  # 효과 초기화 플래그 추가
-    }, broadcast=True)
-    return jsonify({'status': 'success'})
+    try:
+        global current_pushed_scene_id
+        scene = Scene.query.get_or_404(scene_id)
+        # 현재 푸시된 씬 ID 업데이트
+        current_pushed_scene_id = scene_id
+        # 웹소켓을 통해 모든 클라이언트에게 씬 변경 알림
+        socketio.emit('scene_change', {
+            'scene_id': scene_id,
+            'transition': 'fade',
+            'duration': 1.0,
+            'clear_effects': True  # 효과 초기화 플래그 추가
+        }, broadcast=True)
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        print(f"Error in push_scene: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/scenes/<int:scene_id>/out', methods=['POST'])
 def out_scene(scene_id):
-    scene = Scene.query.get_or_404(scene_id)
-    # 웹소켓을 통해 모든 클라이언트에게 아웃 모션 알림
-    socketio.emit('scene_out', {
-        'scene_id': scene_id,
-        'transition': 'fade',
-        'duration': 1.0
-    }, broadcast=True)
-    return jsonify({'status': 'success'})
+    try:
+        scene = Scene.query.get_or_404(scene_id)
+        # 웹소켓을 통해 모든 클라이언트에게 아웃 모션 알림
+        socketio.emit('scene_out', {
+            'scene_id': scene_id,
+            'transition': 'fade',
+            'duration': 1.0
+        }, broadcast=True)
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        print(f"Error in out_scene: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 
 # --- Helper function to initialize database ---
