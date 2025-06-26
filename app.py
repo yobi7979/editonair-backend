@@ -757,4 +757,5 @@ application = app
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
-    socketio.run(app, host="0.0.0.0", port=port, debug=False)
+    # Railway에서는 일반 Flask 앱으로 실행
+    app.run(host="0.0.0.0", port=port, debug=False)
