@@ -20,7 +20,8 @@ def after_request(response):
     response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
     return response
 
-socketio = SocketIO(app, cors_allowed_origins="*")  # Initialize SocketIO
+# SocketIO를 threading 모드로 명시
+socketio = SocketIO(app, async_mode='threading', cors_allowed_origins="*")  # Initialize SocketIO
 
 # Configure database
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -408,19 +409,16 @@ def push_scene(scene_id):
     try:
         global current_pushed_scene_id
         scene = Scene.query.get_or_404(scene_id)
-        # 현재 푸시된 씬 ID 업데이트
         current_pushed_scene_id = scene_id
         print(f"Scene {scene_id} pushed successfully")
-        
-        # WebSocket 기능 비활성화 (Railway에서 문제 발생)
-        # socketio.emit('scene_change', {
-        #     'scene_id': scene_id,
-        #     'transition': 'fade',
-        #     'duration': 1.0,
-        #     'clear_effects': True
-        # }, broadcast=True)
-        
-        return jsonify({'status': 'success', 'scene_id': scene_id, 'message': 'Scene pushed'})
+        # broadcast 옵션 없이 emit
+        socketio.emit('scene_change', {
+            'scene_id': scene_id,
+            'transition': 'fade',
+            'duration': 1.0,
+            'clear_effects': True
+        })
+        return jsonify({'status': 'success', 'scene_id': scene_id})
     except Exception as e:
         print(f"Error in push_scene: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -430,15 +428,13 @@ def out_scene(scene_id):
     try:
         scene = Scene.query.get_or_404(scene_id)
         print(f"Scene {scene_id} out successfully")
-        
-        # WebSocket 기능 비활성화 (Railway에서 문제 발생)
-        # socketio.emit('scene_out', {
-        #     'scene_id': scene_id,
-        #     'transition': 'fade',
-        #     'duration': 1.0
-        # }, broadcast=True)
-        
-        return jsonify({'status': 'success', 'scene_id': scene_id, 'message': 'Scene out'})
+        # broadcast 옵션 없이 emit
+        socketio.emit('scene_out', {
+            'scene_id': scene_id,
+            'transition': 'fade',
+            'duration': 1.0
+        })
+        return jsonify({'status': 'success', 'scene_id': scene_id})
     except Exception as e:
         print(f"Error in out_scene: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -604,7 +600,7 @@ def handle_scene_update(data):
     if scene_id:
         scene = Scene.query.get(scene_id)
         if scene:
-            emit('scene_update', scene_to_dict(scene), broadcast=True)
+            emit('scene_update', scene_to_dict(scene))
 
 @socketio.on('scene_change')
 def handle_scene_change(data):
@@ -616,7 +612,7 @@ def handle_scene_change(data):
             'scene_id': scene_id,
             'transition': data.get('transition', 'fade'),
             'duration': data.get('duration', 1.0)
-        }, broadcast=True)
+        })
 
 @socketio.on('get_first_scene')
 def handle_get_first_scene(data):
