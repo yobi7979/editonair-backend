@@ -1,6 +1,7 @@
 flask
 flask_sqlalchemy
 flask-cors
+flask-socketio
 werkzeug
 pillow
 setuptools
