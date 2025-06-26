@@ -748,8 +748,13 @@ def serve_project_sequence_frame(project_id, sequence_and_filename):
 
 # --- Main Entry Point ---
 
+# Railway에서 작동하도록 전역에서 초기화
+with app.app_context():
+    init_db()
+
+# Railway에서 app 객체를 인식할 수 있도록
+application = app
+
 if __name__ == '__main__':
-    with app.app_context():
-        init_db()
     port = int(os.environ.get("PORT", 5000))
     socketio.run(app, host="0.0.0.0", port=port, debug=False)
