@@ -9,6 +9,7 @@ from werkzeug.utils import secure_filename
 from urllib.parse import unquote
 from PIL import Image
 import socket
+import eventlet
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -742,4 +743,4 @@ if __name__ == '__main__':
     hostname = socket.gethostname()
     local_ip = socket.gethostbyname(hostname)
     print(f"[INFO] 서버가 {local_ip}:5000 에서 실행됩니다. (외부 기기에서 접속 가능)\n")
-    socketio.run(app, host=local_ip, port=5000, debug=True)
+    socketio.run(app, host=local_ip, port=5000, debug=True, server='eventlet')

@@ -6,3 +6,4 @@ Flask-SocketIO
 python-socketio
 python-engineio
 Pillow
+eventlet
