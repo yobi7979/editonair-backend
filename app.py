@@ -8,6 +8,7 @@ from werkzeug.utils import secure_filename
 from urllib.parse import unquote
 from PIL import Image
 import socket
+import re
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -45,6 +46,12 @@ def safe_unicode_filename(filename):
     filename = filename.replace('\x00', '')
     filename = filename.replace('/', '').replace('\\', '')
     return ''.join(c for c in filename if c.isalnum() or c in keepchars or ord(c) > 127)
+
+def slugify(name):
+    name = name.lower()
+    name = re.sub(r'[^a-z0-9가-힣-_]', '-', name)
+    name = re.sub(r'-+', '-', name)
+    return name.strip('-')
 
 # --- Database Models ---
 
@@ -168,9 +175,9 @@ def handle_projects():
         db.session.commit()
 
         # --- 라이브러리 폴더 자동 생성 ---
-        project_lib_path = os.path.join(basedir, '..', 'projects', str(new_project.id), 'library')
-        images_path = os.path.join(project_lib_path, 'images')
-        sequences_path = os.path.join(project_lib_path, 'sequences')
+        project_folder = get_project_folder(new_project_name)
+        images_path = os.path.join(project_folder, 'library', 'images')
+        sequences_path = os.path.join(project_folder, 'library', 'sequences')
         os.makedirs(images_path, exist_ok=True)
         os.makedirs(sequences_path, exist_ok=True)
 
@@ -180,9 +187,9 @@ def handle_projects():
         projects = Project.query.order_by(Project.updated_at.desc()).all()
         # 각 프로젝트별 라이브러리 폴더가 없으면 생성
         for p in projects:
-            project_lib_path = os.path.join(basedir, '..', 'projects', str(p.id), 'library')
-            images_path = os.path.join(project_lib_path, 'images')
-            sequences_path = os.path.join(project_lib_path, 'sequences')
+            project_folder = get_project_folder(p.name)
+            images_path = os.path.join(project_folder, 'library', 'images')
+            sequences_path = os.path.join(project_folder, 'library', 'sequences')
             os.makedirs(images_path, exist_ok=True)
             os.makedirs(sequences_path, exist_ok=True)
         return jsonify([{
@@ -192,15 +199,15 @@ def handle_projects():
             'updated_at': p.updated_at.isoformat() if p.updated_at else None
          } for p in projects])
 
-@app.route('/api/projects/<int:project_id>', methods=['GET', 'PUT', 'DELETE'])
-def handle_project(project_id):
-    project = Project.query.get_or_404(project_id)
+@app.route('/api/projects/<project_name>', methods=['GET', 'PUT', 'DELETE'])
+def handle_project(project_name):
+    project = get_project_by_name(project_name)
 
     if request.method == 'GET':
         # --- 라이브러리 폴더 없으면 생성 ---
-        project_lib_path = os.path.join(basedir, '..', 'projects', str(project.id), 'library')
-        images_path = os.path.join(project_lib_path, 'images')
-        sequences_path = os.path.join(project_lib_path, 'sequences')
+        project_folder = get_project_folder(project_name)
+        images_path = os.path.join(project_folder, 'library', 'images')
+        sequences_path = os.path.join(project_folder, 'library', 'sequences')
         os.makedirs(images_path, exist_ok=True)
         os.makedirs(sequences_path, exist_ok=True)
         return jsonify(project_to_dict(project))
@@ -279,9 +286,9 @@ def handle_project(project_id):
 
 
 # Scene CRUD operations
-@app.route('/api/projects/<int:project_id>/scenes', methods=['POST'])
-def create_scene(project_id):
-    project = Project.query.get_or_404(project_id)
+@app.route('/api/projects/<project_name>/scenes', methods=['POST'])
+def create_scene(project_name):
+    project = get_project_by_name(project_name)
     data = request.get_json()
     if not data or 'name' not in data:
         return jsonify({'error': 'Scene name is required'}), 400
@@ -361,11 +368,11 @@ def delete_scene(scene_id):
     db.session.commit()
     return jsonify({'message': 'Scene deleted successfully'})
 
-@app.route('/overlay/project/<int:project_id>')
-def overlay_project(project_id):
+@app.route('/overlay/project/<project_name>')
+def overlay_project(project_name):
     try:
-        print(f"Accessing overlay for project {project_id}")
-        project = Project.query.get_or_404(project_id)
+        print(f"Accessing overlay for project {project_name}")
+        project = get_project_by_name(project_name)
         print(f"Found project: {project.name}")
         
         # 현재 푸시된 씬이 있으면 해당 씬을 사용, 없으면 첫 번째 씬 사용
@@ -394,9 +401,9 @@ def overlay_project(project_id):
         print(traceback.format_exc())
         return str(e), 500
 
-@app.route('/overlay/project/<int:project_id>/scene/<int:scene_id>')
-def overlay_scene(project_id, scene_id):
-    project = Project.query.get_or_404(project_id)
+@app.route('/overlay/project/<project_name>/scene/<int:scene_id>')
+def overlay_scene(project_name, scene_id):
+    project = get_project_by_name(project_name)
     scene = Scene.query.get_or_404(scene_id)
     return render_template('overlay.html', 
                          project=project, 
@@ -584,9 +591,9 @@ def handle_disconnect():
 
 @socketio.on('join_project')
 def handle_join_project(data):
-    project_id = data.get('project_id')
-    if project_id:
-        emit('project_update', project_to_dict(Project.query.get(project_id)))
+    project_name = data.get('project_name')
+    if project_name:
+        emit('project_update', project_to_dict(get_project_by_name(project_name)))
 
 @socketio.on('join_scene')
 def handle_join_scene(data):
@@ -604,11 +611,11 @@ def handle_scene_update(data):
 
 @socketio.on('scene_change')
 def handle_scene_change(data):
-    project_id = data.get('project_id')
+    project_name = data.get('project_name')
     scene_id = data.get('scene_id')
-    if project_id and scene_id:
+    if project_name and scene_id:
         emit('scene_change', {
-            'project_id': project_id,
+            'project_name': project_name,
             'scene_id': scene_id,
             'transition': data.get('transition', 'fade'),
             'duration': data.get('duration', 1.0)
@@ -616,9 +623,9 @@ def handle_scene_change(data):
 
 @socketio.on('get_first_scene')
 def handle_get_first_scene(data):
-    project_id = data.get('project_id')
-    if project_id:
-        project = Project.query.get(project_id)
+    project_name = data.get('project_name')
+    if project_name:
+        project = get_project_by_name(project_name)
         if project and project.scenes:
             first_scene = project.scenes[0]
             emit('first_scene', scene_to_dict(first_scene))
@@ -634,15 +641,16 @@ def get_dummy_scene():
     }
     return jsonify(dummy_scene)
 
-@app.route('/api/projects/<int:project_id>/upload/image', methods=['POST'])
-def upload_image(project_id):
+@app.route('/api/projects/<project_name>/upload/image', methods=['POST'])
+def upload_image(project_name):
     # 단일/다중 이미지 업로드 지원
     if 'files' not in request.files:
         return jsonify({'error': 'No files part'}), 400
     files = request.files.getlist('files')
     overwrite = request.form.get('overwrite', 'false').lower() == 'true'
-    project_lib_path = os.path.join(basedir, '..', 'projects', str(project_id), 'library', 'images')
-    os.makedirs(project_lib_path, exist_ok=True)
+    project_folder = get_project_folder(project_name)
+    images_path = os.path.join(project_folder, 'library', 'images')
+    os.makedirs(images_path, exist_ok=True)
     saved_files = []
     exists_files = []
     for file in files:
@@ -651,7 +659,7 @@ def upload_image(project_id):
             filename = safe_unicode_filename(file.filename)
             if not filename:
                 continue
-            save_path = os.path.join(project_lib_path, filename)
+            save_path = os.path.join(images_path, filename)
             if os.path.exists(save_path) and not overwrite:
                 exists_files.append(filename)
                 continue
@@ -679,14 +687,15 @@ def create_sprite_sheet(image_files, output_path):
     sheet.save(output_path)
     return len(images), frame_sizes, images[0].size if images else (0, [], (0,0))
 
-@app.route('/api/projects/<int:project_id>/upload/sequence', methods=['POST'])
-def upload_sequence(project_id):
+@app.route('/api/projects/<project_name>/upload/sequence', methods=['POST'])
+def upload_sequence(project_name):
     # 시퀀스 폴더(여러 이미지) 업로드: form-data로 files[], sequence_name
     sequence_name = request.form.get('sequence_name', 'sequence')
     files = request.files.getlist('files')
     if not files:
         return jsonify({'error': 'No files part'}), 400
-    sequence_path = os.path.join(basedir, '..', 'projects', str(project_id), 'library', 'sequences', safe_unicode_filename(sequence_name))
+    project_folder = get_project_folder(project_name)
+    sequence_path = os.path.join(project_folder, 'library', 'sequences', safe_unicode_filename(sequence_name))
     os.makedirs(sequence_path, exist_ok=True)
     temp_frame_paths = []
     overwrite = request.form.get('overwrite', 'false').lower() == 'true'
@@ -723,17 +732,19 @@ def upload_sequence(project_id):
             os.remove(p)
     return jsonify({'uploaded': ['sprite.png', 'meta.json'], 'sequence': sequence_name, 'meta': meta}), 200
 
-@app.route('/api/projects/<int:project_id>/library/images', methods=['GET'])
-def list_project_images(project_id):
-    images_path = os.path.join(basedir, '..', 'projects', str(project_id), 'library', 'images')
+@app.route('/api/projects/<project_name>/library/images', methods=['GET'])
+def list_project_images(project_name):
+    project_folder = get_project_folder(project_name)
+    images_path = os.path.join(project_folder, 'library', 'images')
     if not os.path.exists(images_path):
         return jsonify([])
     files = [f for f in os.listdir(images_path) if os.path.isfile(os.path.join(images_path, f))]
     return jsonify(files)
 
-@app.route('/api/projects/<int:project_id>/library/sequences', methods=['GET'])
-def list_project_sequences(project_id):
-    sequences_path = os.path.join(basedir, '..', 'projects', str(project_id), 'library', 'sequences')
+@app.route('/api/projects/<project_name>/library/sequences', methods=['GET'])
+def list_project_sequences(project_name):
+    project_folder = get_project_folder(project_name)
+    sequences_path = os.path.join(project_folder, 'library', 'sequences')
     if not os.path.exists(sequences_path):
         return jsonify([])
     sequence_folders = [d for d in os.listdir(sequences_path) if os.path.isdir(os.path.join(sequences_path, d))]
@@ -745,24 +756,27 @@ def list_project_sequences(project_id):
         result.append({'name': seq, 'frames': frames})
     return jsonify(result)
 
-@app.route('/projects/<int:project_id>/library/images/<path:filename>')
-def serve_project_image(project_id, filename):
+@app.route('/projects/<project_name>/library/images/<path:filename>')
+def serve_project_image(project_name, filename):
     # URL 디코딩
     decoded_filename = unquote(filename)
-    images_path = os.path.join(basedir, '..', 'projects', str(project_id), 'library', 'images')
+    project_folder = get_project_folder(project_name)
+    images_path = os.path.join(project_folder, 'library', 'images')
     return send_from_directory(images_path, decoded_filename)
 
-@app.route('/projects/<int:project_id>/library/sequences/<path:sequence_and_filename>')
-def serve_project_sequence_frame(project_id, sequence_and_filename):
+@app.route('/projects/<project_name>/library/sequences/<path:sequence_and_filename>')
+def serve_project_sequence_frame(project_name, sequence_and_filename):
     # sequence_and_filename: '시퀀스명/프레임파일명.png'
     decoded_path = unquote(sequence_and_filename)
-    sequences_path = os.path.join(basedir, '..', 'projects', str(project_id), 'library', 'sequences')
+    project_folder = get_project_folder(project_name)
+    sequences_path = os.path.join(project_folder, 'library', 'sequences')
     return send_from_directory(sequences_path, decoded_path)
 
-@app.route('/api/projects/<int:project_id>/library/images/<filename>', methods=['DELETE'])
-def delete_project_image(project_id, filename):
-    images_path = os.path.join(basedir, '..', 'projects', str(project_id), 'library', 'images')
+@app.route('/api/projects/<project_name>/library/images/<filename>', methods=['DELETE'])
+def delete_project_image(project_name, filename):
+    project_folder = get_project_folder(project_name)
     decoded_filename = unquote(filename)
+    images_path = os.path.join(project_folder, 'library', 'images')
     file_path = os.path.join(images_path, decoded_filename)
     if os.path.exists(file_path):
         os.remove(file_path)
@@ -783,3 +797,16 @@ if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     # Railway에서는 일반 Flask 앱으로 실행
     app.run(host="0.0.0.0", port=port, debug=False)
+
+# 프로젝트명으로 폴더 생성 및 경로 반환
+
+def get_project_folder(project_name):
+    basedir = os.path.abspath(os.path.dirname(__file__))
+    folder = slugify(project_name)
+    return os.path.join(basedir, '..', 'projects', folder)
+
+# 프로젝트명으로 DB에서 조회
+
+def get_project_by_name(project_name):
+    from models import Project  # 또는 적절한 위치에서 import
+    return Project.query.filter_by(name=project_name).first()
