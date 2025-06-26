@@ -78,6 +78,8 @@ class Project(db.Model):
     def __repr__(self):
         return f'<Project {self.name}>'
 
+def get_project_by_name(project_name):
+    return Project.query.filter_by(name=project_name).first()
 
 class Scene(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -824,6 +826,3 @@ if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     # Railway에서는 일반 Flask 앱으로 실행
     app.run(host="0.0.0.0", port=port, debug=False)
-
-def get_project_by_name(project_name):
-    return Project.query.filter_by(name=project_name).first()
