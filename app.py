@@ -9,6 +9,7 @@ from urllib.parse import unquote
 from PIL import Image
 import socket
 import re
+import shutil
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -812,6 +813,20 @@ def delete_project_image(project_name, filename):
         return jsonify({'message': 'Deleted'}), 200
     else:
         return jsonify({'error': 'File not found'}), 404
+
+@app.route('/api/projects/<project_name>/library/sequences/<sequence_name>', methods=['DELETE'])
+def delete_project_sequence(project_name, sequence_name):
+    project = get_project_by_name(project_name)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+    project_folder = get_project_folder(project_name)
+    sequences_path = os.path.join(project_folder, 'library', 'sequences')
+    sequence_folder = os.path.join(sequences_path, safe_unicode_filename(sequence_name))
+    if os.path.exists(sequence_folder):
+        shutil.rmtree(sequence_folder)
+        return jsonify({'message': 'Sequence deleted'}), 200
+    else:
+        return jsonify({'error': 'Sequence not found'}), 404
 
 # --- Main Entry Point ---
 
