@@ -16,9 +16,9 @@ app = Flask(__name__)
 # CORS 미들웨어 추가
 @app.after_request
 def after_request(response):
-    response.headers.add('Access-Control-Allow-Origin', '*')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    response.headers['Access-Control-Allow-Origin'] = 'http://localhost:5173'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
+    response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
     return response
 
 # SocketIO를 threading 모드로 명시
@@ -643,6 +643,9 @@ def get_dummy_scene():
 
 @app.route('/api/projects/<project_name>/upload/image', methods=['POST'])
 def upload_image(project_name):
+    project = get_project_by_name(project_name)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
     # 단일/다중 이미지 업로드 지원
     if 'files' not in request.files:
         return jsonify({'error': 'No files part'}), 400
@@ -655,7 +658,6 @@ def upload_image(project_name):
     exists_files = []
     for file in files:
         if file and allowed_image_file(file.filename):
-            #filename = secure_filename(file.filename)
             filename = safe_unicode_filename(file.filename)
             if not filename:
                 continue
@@ -689,6 +691,9 @@ def create_sprite_sheet(image_files, output_path):
 
 @app.route('/api/projects/<project_name>/upload/sequence', methods=['POST'])
 def upload_sequence(project_name):
+    project = get_project_by_name(project_name)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
     # 시퀀스 폴더(여러 이미지) 업로드: form-data로 files[], sequence_name
     sequence_name = request.form.get('sequence_name', 'sequence')
     files = request.files.getlist('files')
@@ -734,6 +739,9 @@ def upload_sequence(project_name):
 
 @app.route('/api/projects/<project_name>/library/images', methods=['GET'])
 def list_project_images(project_name):
+    project = get_project_by_name(project_name)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
     project_folder = get_project_folder(project_name)
     images_path = os.path.join(project_folder, 'library', 'images')
     if not os.path.exists(images_path):
@@ -743,6 +751,9 @@ def list_project_images(project_name):
 
 @app.route('/api/projects/<project_name>/library/sequences', methods=['GET'])
 def list_project_sequences(project_name):
+    project = get_project_by_name(project_name)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
     project_folder = get_project_folder(project_name)
     sequences_path = os.path.join(project_folder, 'library', 'sequences')
     if not os.path.exists(sequences_path):
@@ -774,6 +785,9 @@ def serve_project_sequence_frame(project_name, sequence_and_filename):
 
 @app.route('/api/projects/<project_name>/library/images/<filename>', methods=['DELETE'])
 def delete_project_image(project_name, filename):
+    project = get_project_by_name(project_name)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
     project_folder = get_project_folder(project_name)
     decoded_filename = unquote(filename)
     images_path = os.path.join(project_folder, 'library', 'images')
