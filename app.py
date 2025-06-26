@@ -13,7 +13,15 @@ import eventlet
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app, origins="*", supports_credentials=False)
+
+# CORS 미들웨어 추가
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
+
 socketio = SocketIO(app, cors_allowed_origins="*")  # Initialize SocketIO
 
 # Configure database
