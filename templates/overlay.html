@@ -690,6 +690,115 @@
                     timerContainer.appendChild(timerElement);
                     element.appendChild(timerContainer);
                     break;
+
+                case 'sequence':
+                    // 시퀀스 애니메이션을 위한 캔버스 생성
+                    const canvas = document.createElement('canvas');
+                    canvas.width = obj.properties.width || obj.properties.frameWidth || 100;
+                    canvas.height = obj.properties.height || obj.properties.frameHeight || 100;
+                    canvas.style.width = '100%';
+                    canvas.style.height = '100%';
+                    canvas.style.display = 'block';
+                    
+                    // 투명도 지원을 위한 캔버스 설정
+                    const ctx = canvas.getContext('2d');
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
+                    
+                    // 시퀀스 애니메이션 변수
+                    let currentFrame = obj.properties.currentFrame || 0;
+                    let frameCount = obj.properties.frameCount || 1;
+                    let frameWidth = obj.properties.frameWidth || 100;
+                    let frameHeight = obj.properties.frameHeight || 100;
+                    let fps = obj.properties.fps || 24;
+                    let spriteUrl = obj.properties.spriteUrl || '';
+                    let spriteImage = null;
+                    let animationInterval = null;
+                    
+                    // 스프라이트 이미지 로드
+                    if (spriteUrl) {
+                        const img = new Image();
+                        img.crossOrigin = 'anonymous'; // CORS 설정
+                        img.onload = function() {
+                            spriteImage = img;
+                            drawFrame();
+                        };
+                        img.onerror = function() {
+                            console.error('Failed to load sprite image:', spriteUrl);
+                        };
+                        img.src = spriteUrl;
+                    }
+                    
+                    // 프레임 그리기 함수
+                    function drawFrame() {
+                        if (!spriteImage || !ctx) return;
+                        
+                        // 캔버스 클리어 (투명하게)
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        
+                        // 현재 프레임 그리기 (투명도 유지)
+                        ctx.drawImage(
+                            spriteImage,
+                            0, frameHeight * currentFrame, // 소스 x, y
+                            frameWidth, frameHeight,        // 소스 width, height
+                            0, 0,                          // 대상 x, y
+                            canvas.width, canvas.height     // 대상 width, height
+                        );
+                    }
+                    
+                    // 애니메이션 시작
+                    function startAnimation() {
+                        if (animationInterval) return;
+                        
+                        animationInterval = setInterval(() => {
+                            currentFrame = (currentFrame + 1) % frameCount;
+                            drawFrame();
+                        }, 1000 / fps);
+                    }
+                    
+                    // 애니메이션 정지
+                    function stopAnimation() {
+                        if (animationInterval) {
+                            clearInterval(animationInterval);
+                            animationInterval = null;
+                        }
+                    }
+                    
+                    // 애니메이션 리셋
+                    function resetAnimation() {
+                        stopAnimation();
+                        currentFrame = 0;
+                        drawFrame();
+                    }
+                    
+                    // 시퀀스 컨트롤 이벤트 리스너
+                    socket.on('sequence_control', (data) => {
+                        if (data.sequence_id === obj.id) {
+                            switch (data.action) {
+                                case 'play':
+                                    startAnimation();
+                                    break;
+                                case 'pause':
+                                    stopAnimation();
+                                    break;
+                                case 'reset':
+                                    resetAnimation();
+                                    break;
+                                case 'setFrame':
+                                    currentFrame = Math.max(0, Math.min(data.frame, frameCount - 1));
+                                    drawFrame();
+                                    break;
+                            }
+                        }
+                    });
+                    
+                    // 자동 재생 설정
+                    if (obj.properties.autoPlay !== false) {
+                        startAnimation();
+                    }
+                    
+                    element.appendChild(canvas);
+                    break;
             }
             
             // 위치 및 크기 설정
