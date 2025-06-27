@@ -553,6 +553,35 @@
                     break;
                     
                 case 'shape': {
+                    // 삼각형 분기
+                    if (obj.properties.shapeType === 'triangle') {
+                        const width = obj.properties.width || 100;
+                        const height = obj.properties.height || 100;
+                        const color = obj.properties.color || '#FF0000';
+                        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                        svg.setAttribute('width', width);
+                        svg.setAttribute('height', height);
+                        svg.style.position = 'absolute';
+                        svg.style.left = '0px';
+                        svg.style.top = '0px';
+                        svg.style.width = '100%';
+                        svg.style.height = '100%';
+                        svg.style.display = 'block';
+                        svg.style.pointerEvents = 'none';
+                        // polygon
+                        const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                        polygon.setAttribute('points', `${width/2},0 0,${height} ${width},${height}`);
+                        polygon.setAttribute('fill', color);
+                        // 테두리
+                        if (obj.properties.useShapeBorder) {
+                            polygon.setAttribute('stroke', obj.properties.shapeBorderColor || '#FFFFFF');
+                            polygon.setAttribute('stroke-width', obj.properties.shapeBorderWidth || 1);
+                        }
+                        // 그림자 (SVG filter는 복잡하므로 우선 생략)
+                        svg.appendChild(polygon);
+                        element.appendChild(svg);
+                        break;
+                    }
                     // 그라데이션 적용
                     if (obj.properties.fillType === 'gradient' && obj.properties.gradient && obj.properties.gradient.stops) {
                         const stops = obj.properties.gradient.stops;
