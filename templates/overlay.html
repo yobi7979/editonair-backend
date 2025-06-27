@@ -749,9 +749,18 @@
                     // 애니메이션 시작
                     function startAnimation() {
                         if (animationInterval) return;
-                        
                         animationInterval = setInterval(() => {
-                            currentFrame = (currentFrame + 1) % frameCount;
+                            if (obj.properties.loop === false) {
+                                // 마지막 프레임이면 멈춤
+                                if (currentFrame >= frameCount - 1) {
+                                    stopAnimation();
+                                    return;
+                                }
+                                currentFrame++;
+                            } else {
+                                // 루프일 때만 반복
+                                currentFrame = (currentFrame + 1) % frameCount;
+                            }
                             drawFrame();
                         }, 1000 / fps);
                     }
