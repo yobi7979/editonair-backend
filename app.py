@@ -122,7 +122,7 @@ def project_to_dict(project):
         'name': project.name,
         'created_at': project.created_at.isoformat() if project.created_at else None,
         'updated_at': project.updated_at.isoformat() if project.updated_at else None,
-        'scenes': [scene_to_dict(scene) for scene in project.scenes]
+        'scenes': [scene_to_dict(scene) for scene in sorted(project.scenes, key=lambda s: s.order)]
     }
 
 def scene_to_dict(scene):
@@ -133,7 +133,7 @@ def scene_to_dict(scene):
         'project_id': scene.project_id,
         'created_at': scene.created_at.isoformat() if scene.created_at else None,
         'updated_at': scene.updated_at.isoformat() if scene.updated_at else None,
-        'objects': [object_to_dict(obj) for obj in scene.objects]
+        'objects': [object_to_dict(obj) for obj in sorted(scene.objects, key=lambda o: o.order)]
     }
 
 def object_to_dict(obj):
