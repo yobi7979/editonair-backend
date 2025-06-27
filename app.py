@@ -692,66 +692,169 @@ def create_sprite_sheet(image_files, output_path):
     images = [Image.open(f) for f in image_files]
     if not images:
         return None, None, None
-    widths, heights = zip(*(img.size for img in images))
+    
+    # 모든 이미지를 RGBA 모드로 변환하여 투명도 지원
+    rgba_images = []
+    for img in images:
+        if img.mode != 'RGBA':
+            img = img.convert('RGBA')
+        rgba_images.append(img)
+    
+    widths, heights = zip(*(img.size for img in rgba_images))
     max_width = max(widths)
     total_height = sum(heights)
-    sheet = Image.new('RGBA', (max_width, total_height))
+    
+    # RGBA 모드로 스프라이트 시트 생성
+    sheet = Image.new('RGBA', (max_width, total_height), (0, 0, 0, 0))
     y_offset = 0
     frame_sizes = []
-    for img in images:
-        sheet.paste(img, (0, y_offset))
+    
+    for img in rgba_images:
+        # 투명 배경으로 붙이기
+        sheet.paste(img, (0, y_offset), img)
         frame_sizes.append({'width': img.width, 'height': img.height})
         y_offset += img.height
-    sheet.save(output_path)
-    return len(images), frame_sizes, images[0].size if images else (0, [], (0,0))
+    
+    # PNG로 저장하여 투명도 유지
+    sheet.save(output_path, 'PNG', optimize=True)
+    return len(rgba_images), frame_sizes, rgba_images[0].size if rgba_images else (0, 0)
+
+def convert_image_format(input_path, output_path, format='PNG', quality=95):
+    '''이미지 포맷을 변환하는 함수'''
+    try:
+        with Image.open(input_path) as img:
+            # RGBA 모드로 변환하여 투명도 지원
+            if img.mode != 'RGBA':
+                img = img.convert('RGBA')
+            
+            if format.upper() == 'PNG':
+                img.save(output_path, 'PNG', optimize=True)
+            elif format.upper() == 'JPEG':
+                # JPEG는 투명도를 지원하지 않으므로 흰색 배경으로 합성
+                background = Image.new('RGB', img.size, (255, 255, 255))
+                background.paste(img, mask=img.split()[-1])  # 알파 채널을 마스크로 사용
+                background.save(output_path, 'JPEG', quality=quality, optimize=True)
+            elif format.upper() == 'WEBP':
+                img.save(output_path, 'WEBP', quality=quality, method=6)
+            else:
+                img.save(output_path, format.upper())
+        return True
+    except Exception as e:
+        print(f"Error converting image: {e}")
+        return False
+
+def process_sequence_images(image_files, output_dir, sequence_name, options=None):
+    '''시퀀스 이미지들을 처리하는 함수'''
+    if options is None:
+        options = {}
+    
+    format = options.get('format', 'PNG')
+    quality = options.get('quality', 95)
+    create_sprite = options.get('create_sprite', True)
+    resize = options.get('resize', None)
+    
+    processed_files = []
+    temp_frame_paths = []
+    
+    for i, file_path in enumerate(image_files):
+        if not os.path.exists(file_path):
+            continue
+            
+        # 파일명 생성 (숫자 순서대로)
+        filename = f"frame_{i:04d}.{format.lower()}"
+        output_path = os.path.join(output_dir, filename)
+        
+        # 이미지 변환
+        if convert_image_format(file_path, output_path, format, quality):
+            processed_files.append(filename)
+            temp_frame_paths.append(output_path)
+    
+    # 스프라이트 시트 생성 (옵션)
+    sprite_path = None
+    meta = {
+        'name': sequence_name,
+        'format': format,
+        'frame_count': len(processed_files),
+        'original_filenames': [os.path.basename(p) for p in image_files],
+        'processed_filenames': processed_files
+    }
+    
+    if create_sprite and temp_frame_paths:
+        sprite_path = os.path.join(output_dir, 'sprite.png')
+        frame_count, frame_sizes, (frame_w, frame_h) = create_sprite_sheet(temp_frame_paths, sprite_path)
+        meta.update({
+            'sprite': 'sprite.png',
+            'frame_width': frame_w,
+            'frame_height': frame_h,
+            'frame_sizes': frame_sizes
+        })
+    
+    # 메타데이터 저장
+    meta_path = os.path.join(output_dir, 'meta.json')
+    with open(meta_path, 'w', encoding='utf-8') as f:
+        json.dump(meta, f, ensure_ascii=False, indent=2)
+    
+    return processed_files, sprite_path, meta
 
 @app.route('/api/projects/<project_name>/upload/sequence', methods=['POST'])
 def upload_sequence(project_name):
     project = get_project_by_name(project_name)
     if not project:
         return jsonify({'error': 'Project not found'}), 404
+    
     # 시퀀스 폴더(여러 이미지) 업로드: form-data로 files[], sequence_name
     sequence_name = request.form.get('sequence_name', 'sequence')
     files = request.files.getlist('files')
     if not files:
         return jsonify({'error': 'No files part'}), 400
+    
+    # 변환 옵션 파싱
+    format = request.form.get('format', 'PNG')
+    quality = int(request.form.get('quality', 95))
+    create_sprite = request.form.get('create_sprite', 'true').lower() == 'true'
+    
     project_folder = get_project_folder(project_name)
     sequence_path = os.path.join(project_folder, 'library', 'sequences', safe_unicode_filename(sequence_name))
     os.makedirs(sequence_path, exist_ok=True)
-    temp_frame_paths = []
+    
+    # 임시 파일 저장
+    temp_files = []
     overwrite = request.form.get('overwrite', 'false').lower() == 'true'
+    
     for file in files:
         if file and allowed_image_file(file.filename):
             filename = safe_unicode_filename(file.filename)
             if not filename:
                 continue
-            save_path = os.path.join(sequence_path, filename)
-            if os.path.exists(save_path) and not overwrite:
-                continue
-            file.save(save_path)
-            temp_frame_paths.append(save_path)
-    if not temp_frame_paths:
+            temp_path = os.path.join(sequence_path, f"temp_{filename}")
+            file.save(temp_path)
+            temp_files.append(temp_path)
+    
+    if not temp_files:
         return jsonify({'error': 'No valid images uploaded'}), 400
-    # sprite sheet 생성
-    sprite_path = os.path.join(sequence_path, 'sprite.png')
-    frame_count, frame_sizes, (frame_w, frame_h) = create_sprite_sheet(temp_frame_paths, sprite_path)
-    # 메타데이터 저장
-    meta = {
-        'name': sequence_name,
-        'sprite': 'sprite.png',
-        'frame_count': frame_count,
-        'frame_width': frame_w,
-        'frame_height': frame_h,
-        'frame_sizes': frame_sizes,
-        'original_filenames': [os.path.basename(p) for p in temp_frame_paths]
+    
+    # 파일명으로 정렬 (숫자 순서)
+    temp_files.sort(key=lambda x: os.path.basename(x))
+    
+    # 시퀀스 처리
+    options = {
+        'format': format,
+        'quality': quality,
+        'create_sprite': create_sprite
     }
-    with open(os.path.join(sequence_path, 'meta.json'), 'w', encoding='utf-8') as f:
-        json.dump(meta, f, ensure_ascii=False, indent=2)
-    # 원본 프레임 삭제 (sprite, meta 제외)
-    for p in temp_frame_paths:
-        if os.path.exists(p):
-            os.remove(p)
-    return jsonify({'uploaded': ['sprite.png', 'meta.json'], 'sequence': sequence_name, 'meta': meta}), 200
+    
+    processed_files, sprite_path, meta = process_sequence_images(temp_files, sequence_path, sequence_name, options)
+    
+    # 임시 파일 삭제
+    for temp_file in temp_files:
+        if os.path.exists(temp_file):
+            os.remove(temp_file)
+    
+    return jsonify({
+        'uploaded': processed_files + (['sprite.png'] if sprite_path else []),
+        'sequence': sequence_name, 
+        'meta': meta
+    }), 200
 
 @app.route('/api/projects/<project_name>/library/images', methods=['GET'])
 def list_project_images(project_name):
