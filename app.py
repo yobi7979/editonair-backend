@@ -1,3 +1,6 @@
+# 배포 트리거용 주석
+# ... existing code ...
+
 import os
 from flask import Flask, jsonify, request, render_template, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
@@ -831,19 +834,38 @@ def process_sequence_images(image_files, output_dir, sequence_name, options=None
 def upload_sequence(project_name):
     import time
     start_time = time.time()
-    
     print(f"Starting sequence upload for project: {project_name}")
-    
+
     project = get_project_by_name(project_name)
     if not project:
         return jsonify({'error': 'Project not found'}), 404
-    
-    # 시퀀스 폴더(여러 이미지) 업로드: form-data로 files[], sequence_name
+
     sequence_name = request.form.get('sequence_name', 'sequence')
+
+    # 프론트엔드에서 sprite/meta만 업로드하는 경우 지원
+    sprite = request.files.get('sprite')
+    meta = request.files.get('meta')
+    if sprite and meta:
+        project_folder = get_project_folder(project_name)
+        sequence_path = os.path.join(project_folder, 'library', 'sequences', safe_unicode_filename(sequence_name))
+        os.makedirs(sequence_path, exist_ok=True)
+        sprite_path = os.path.join(sequence_path, 'sprite.png')
+        meta_path = os.path.join(sequence_path, 'meta.json')
+        sprite.save(sprite_path)
+        meta.save(meta_path)
+        elapsed_time = time.time() - start_time
+        print(f"Sprite/meta upload completed in {elapsed_time:.2f} seconds")
+        return jsonify({
+            'uploaded': ['sprite.png', 'meta.json'],
+            'sequence': sequence_name,
+            'processing_time': f'{elapsed_time:.2f}s'
+        }), 200
+
+    # 기존 방식 (files로 여러 이미지 업로드)
     files = request.files.getlist('files')
     if not files:
-        return jsonify({'error': 'No files part'}), 400
-    
+        return jsonify({'error': 'No files part, or no sprite/meta part'}), 400
+
     print(f"Received {len(files)} files for sequence '{sequence_name}'")
     
     # 변환 옵션 파싱
