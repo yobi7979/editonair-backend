@@ -42,8 +42,20 @@ current_pushed_scene_id = None
 
 ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
+# 파일 크기 제한 (50MB)
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+# 업로드 타임아웃 (5분)
+UPLOAD_TIMEOUT = 300  # 5분
+
 def allowed_image_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
+
+def check_file_size(file):
+    """파일 크기 체크"""
+    file.seek(0, 2)  # 파일 끝으로 이동
+    size = file.tell()
+    file.seek(0)  # 파일 시작으로 복귀
+    return size <= MAX_FILE_SIZE
 
 def safe_unicode_filename(filename):
     # 위험문자만 제거하고 한글 등 유니코드는 허용
@@ -61,7 +73,6 @@ def slugify(name):
     return name.strip('-') or 'untitled'
 
 # 프로젝트명으로 폴더 생성 및 경로 반환
-
 def get_project_folder(project_name):
     basedir = os.path.abspath(os.path.dirname(__file__))
     folder = slugify(project_name)
@@ -689,13 +700,15 @@ def upload_image(project_name):
 
 def create_sprite_sheet(image_files, output_path):
     '''여러 이미지를 세로 1줄 sprite sheet로 합치고 저장'''
+    print(f"Creating sprite sheet with {len(image_files)} images...")
     images = [Image.open(f) for f in image_files]
     if not images:
         return None, None, None
     
     # 모든 이미지를 RGBA 모드로 변환하여 투명도 지원
     rgba_images = []
-    for img in images:
+    for i, img in enumerate(images):
+        print(f"Processing image {i+1}/{len(images)}...")
         if img.mode != 'RGBA':
             img = img.convert('RGBA')
         rgba_images.append(img)
@@ -703,6 +716,8 @@ def create_sprite_sheet(image_files, output_path):
     widths, heights = zip(*(img.size for img in rgba_images))
     max_width = max(widths)
     total_height = sum(heights)
+    
+    print(f"Sprite sheet size: {max_width}x{total_height}")
     
     # RGBA 모드로 스프라이트 시트 생성
     sheet = Image.new('RGBA', (max_width, total_height), (0, 0, 0, 0))
@@ -716,12 +731,15 @@ def create_sprite_sheet(image_files, output_path):
         y_offset += img.height
     
     # PNG로 저장하여 투명도 유지
+    print("Saving sprite sheet...")
     sheet.save(output_path, 'PNG', optimize=True)
+    print("Sprite sheet created successfully!")
     return len(rgba_images), frame_sizes, rgba_images[0].size if rgba_images else (0, 0)
 
 def convert_image_format(input_path, output_path, format='PNG', quality=95):
     '''이미지 포맷을 변환하는 함수'''
     try:
+        print(f"Converting {os.path.basename(input_path)} to {format}...")
         with Image.open(input_path) as img:
             # RGBA 모드로 변환하여 투명도 지원
             if img.mode != 'RGBA':
@@ -738,9 +756,10 @@ def convert_image_format(input_path, output_path, format='PNG', quality=95):
                 img.save(output_path, 'WEBP', quality=quality, method=6)
             else:
                 img.save(output_path, format.upper())
+        print(f"Converted {os.path.basename(input_path)} successfully!")
         return True
     except Exception as e:
-        print(f"Error converting image: {e}")
+        print(f"Error converting {os.path.basename(input_path)}: {e}")
         return False
 
 def process_sequence_images(image_files, output_dir, sequence_name, options=None):
@@ -753,21 +772,31 @@ def process_sequence_images(image_files, output_dir, sequence_name, options=None
     create_sprite = options.get('create_sprite', True)
     resize = options.get('resize', None)
     
+    print(f"Processing {len(image_files)} images for sequence '{sequence_name}'...")
+    print(f"Format: {format}, Quality: {quality}, Create sprite: {create_sprite}")
+    
     processed_files = []
     temp_frame_paths = []
     
     for i, file_path in enumerate(image_files):
         if not os.path.exists(file_path):
+            print(f"Warning: File {file_path} does not exist, skipping...")
             continue
             
         # 파일명 생성 (숫자 순서대로)
         filename = f"frame_{i:04d}.{format.lower()}"
         output_path = os.path.join(output_dir, filename)
         
+        print(f"Processing frame {i+1}/{len(image_files)}: {os.path.basename(file_path)}")
+        
         # 이미지 변환
         if convert_image_format(file_path, output_path, format, quality):
             processed_files.append(filename)
             temp_frame_paths.append(output_path)
+        else:
+            print(f"Failed to convert {file_path}")
+    
+    print(f"Successfully processed {len(processed_files)} images")
     
     # 스프라이트 시트 생성 (옵션)
     sprite_path = None
@@ -780,6 +809,7 @@ def process_sequence_images(image_files, output_dir, sequence_name, options=None
     }
     
     if create_sprite and temp_frame_paths:
+        print("Creating sprite sheet...")
         sprite_path = os.path.join(output_dir, 'sprite.png')
         frame_count, frame_sizes, (frame_w, frame_h) = create_sprite_sheet(temp_frame_paths, sprite_path)
         meta.update({
@@ -794,10 +824,16 @@ def process_sequence_images(image_files, output_dir, sequence_name, options=None
     with open(meta_path, 'w', encoding='utf-8') as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
     
+    print(f"Sequence '{sequence_name}' processing completed!")
     return processed_files, sprite_path, meta
 
 @app.route('/api/projects/<project_name>/upload/sequence', methods=['POST'])
 def upload_sequence(project_name):
+    import time
+    start_time = time.time()
+    
+    print(f"Starting sequence upload for project: {project_name}")
+    
     project = get_project_by_name(project_name)
     if not project:
         return jsonify({'error': 'Project not found'}), 404
@@ -807,6 +843,8 @@ def upload_sequence(project_name):
     files = request.files.getlist('files')
     if not files:
         return jsonify({'error': 'No files part'}), 400
+    
+    print(f"Received {len(files)} files for sequence '{sequence_name}'")
     
     # 변환 옵션 파싱
     format = request.form.get('format', 'PNG')
@@ -821,17 +859,25 @@ def upload_sequence(project_name):
     temp_files = []
     overwrite = request.form.get('overwrite', 'false').lower() == 'true'
     
-    for file in files:
+    print("Saving temporary files...")
+    for i, file in enumerate(files):
         if file and allowed_image_file(file.filename):
+            # 파일 크기 체크
+            if not check_file_size(file):
+                return jsonify({'error': f'File {file.filename} is too large (max 50MB)'}), 400
+            
             filename = safe_unicode_filename(file.filename)
             if not filename:
                 continue
             temp_path = os.path.join(sequence_path, f"temp_{filename}")
             file.save(temp_path)
             temp_files.append(temp_path)
+            print(f"Saved temp file {i+1}/{len(files)}: {filename}")
     
     if not temp_files:
         return jsonify({'error': 'No valid images uploaded'}), 400
+    
+    print(f"Saved {len(temp_files)} temporary files")
     
     # 파일명으로 정렬 (숫자 순서)
     temp_files.sort(key=lambda x: os.path.basename(x))
@@ -843,18 +889,35 @@ def upload_sequence(project_name):
         'create_sprite': create_sprite
     }
     
-    processed_files, sprite_path, meta = process_sequence_images(temp_files, sequence_path, sequence_name, options)
-    
-    # 임시 파일 삭제
-    for temp_file in temp_files:
-        if os.path.exists(temp_file):
-            os.remove(temp_file)
-    
-    return jsonify({
-        'uploaded': processed_files + (['sprite.png'] if sprite_path else []),
-        'sequence': sequence_name, 
-        'meta': meta
-    }), 200
+    try:
+        processed_files, sprite_path, meta = process_sequence_images(temp_files, sequence_path, sequence_name, options)
+        
+        # 임시 파일 삭제
+        print("Cleaning up temporary files...")
+        for temp_file in temp_files:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+        
+        elapsed_time = time.time() - start_time
+        print(f"Sequence upload completed in {elapsed_time:.2f} seconds")
+        
+        return jsonify({
+            'uploaded': processed_files + (['sprite.png'] if sprite_path else []),
+            'sequence': sequence_name, 
+            'meta': meta,
+            'processing_time': f"{elapsed_time:.2f}s"
+        }), 200
+        
+    except Exception as e:
+        print(f"Error during sequence processing: {e}")
+        # 임시 파일 정리
+        for temp_file in temp_files:
+            if os.path.exists(temp_file):
+                try:
+                    os.remove(temp_file)
+                except:
+                    pass
+        return jsonify({'error': f'Processing failed: {str(e)}'}), 500
 
 @app.route('/api/projects/<project_name>/library/images', methods=['GET'])
 def list_project_images(project_name):
