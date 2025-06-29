@@ -553,52 +553,111 @@
                     break;
                     
                 case 'shape': {
-                    // 삼각형도 box와 완전히 동일하게 처리 (clip-path 제거)
                     const width = obj.properties.width || 100;
                     const height = obj.properties.height || 100;
-                    element.style.width = width + 'px';
-                    element.style.height = height + 'px';
                     element.style.left = (obj.properties.x || 0) + 'px';
                     element.style.top = (obj.properties.y || 0) + 'px';
                     element.style.position = 'absolute';
                     element.style.display = 'block';
                     element.style.pointerEvents = 'none';
-                    // background (gradient or color)
-                    if (obj.properties.fillType === 'gradient' && obj.properties.gradient && obj.properties.gradient.stops) {
-                        function toRgba(color, opacity) {
-                            if (color.startsWith('#')) {
-                                let hex = color.replace('#', '');
-                                if (hex.length === 3) hex = hex.split('').map(x => x + x).join('');
-                                const r = parseInt(hex.substring(0,2), 16);
-                                const g = parseInt(hex.substring(2,4), 16);
-                                const b = parseInt(hex.substring(4,6), 16);
-                                return `rgba(${r},${g},${b},${opacity ?? 1})`;
-                            }
-                            return color;
+                    
+                    // 삼각형은 SVG로 렌더링
+                    if (obj.properties.shapeType === 'triangle') {
+                        let fill = obj.properties.color || '#FF0000';
+                        let gradDef = '';
+                        
+                        // 그라데이션 처리
+                        if (obj.properties.fillType === 'gradient' && obj.properties.gradient && obj.properties.gradient.stops) {
+                            const gradId = `overlay-triangle-grad-${obj.id}`;
+                            fill = `url(#${gradId})`;
+                            gradDef = `<defs><linearGradient id="${gradId}" x1="0%" y1="0%" x2="100%" y2="0%">`;
+                            obj.properties.gradient.stops.forEach((s, i) => {
+                                gradDef += `<stop offset="${(s.position||0)*100}%" stop-color="${s.color}" stop-opacity="${s.opacity ?? 1}" />`;
+                            });
+                            gradDef += '</linearGradient></defs>';
                         }
-                        const stops = obj.properties.gradient.stops;
-                        const gradStr = `linear-gradient(to right, ${stops.map(s => `${toRgba(s.color, s.opacity)} ${s.position*100 || 0}%`).join(', ')})`;
-                        element.style.background = gradStr;
+                        
+                        // SVG 삼각형 생성
+                        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                        svg.setAttribute('width', width);
+                        svg.setAttribute('height', height);
+                        svg.style.position = 'absolute';
+                        svg.style.left = '0';
+                        svg.style.top = '0';
+                        svg.style.pointerEvents = 'none';
+                        
+                        // 그라데이션 정의 추가
+                        if (gradDef) {
+                            svg.innerHTML = gradDef;
+                        }
+                        
+                        // 삼각형 polygon 생성
+                        const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                        polygon.setAttribute('points', `${width/2},0 0,${height} ${width},${height}`);
+                        polygon.setAttribute('fill', fill);
+                        
+                        // 테두리 설정
+                        if (obj.properties.useShapeBorder) {
+                            polygon.setAttribute('stroke', obj.properties.shapeBorderColor || '#FFFFFF');
+                            polygon.setAttribute('stroke-width', obj.properties.shapeBorderWidth || 1);
+                        } else {
+                            polygon.setAttribute('stroke', 'none');
+                        }
+                        
+                        // 그림자 설정
+                        if (obj.properties.useShapeShadow) {
+                            const shadowFilter = `drop-shadow(${obj.properties.shapeShadowOffsetX||0}px ${obj.properties.shapeShadowOffsetY||0}px ${obj.properties.shapeShadowBlur||0}px ${obj.properties.shapeShadowColor||'#000'})`;
+                            polygon.style.filter = shadowFilter;
+                        }
+                        
+                        svg.appendChild(polygon);
+                        element.appendChild(svg);
                     } else {
-                        element.style.backgroundColor = obj.properties.color || '#FF0000';
-                    }
-                    // borderRadius (circle/ellipse만 50%)
-                    element.style.borderRadius = obj.properties.shapeType === 'circle' || obj.properties.shapeType === 'ellipse' ? '50%' : '0';
-                    // border
-                    if (obj.properties.useShapeBorder) {
-                        element.style.border = `${obj.properties.shapeBorderWidth || 1}px ${obj.properties.shapeBorderStyle || 'solid'} ${obj.properties.shapeBorderColor || '#FFFFFF'}`;
-                    } else {
-                        element.style.border = 'none';
-                    }
-                    // box-shadow
-                    if (obj.properties.useShapeShadow) {
-                        element.style.boxShadow = `${obj.properties.shapeShadowOffsetX || 0}px ${obj.properties.shapeShadowOffsetY || 0}px ${obj.properties.shapeShadowBlur || 0}px ${obj.properties.shapeShadowColor || '#000000'}`;
-                    } else {
-                        element.style.boxShadow = 'none';
-                    }
-                    // opacity
-                    if (obj.properties.opacity !== undefined) {
-                        element.style.opacity = obj.properties.opacity;
+                        // 기존 CSS 방식 (box, circle, ellipse)
+                        element.style.width = width + 'px';
+                        element.style.height = height + 'px';
+                        
+                        // background (gradient or color)
+                        if (obj.properties.fillType === 'gradient' && obj.properties.gradient && obj.properties.gradient.stops) {
+                            function toRgba(color, opacity) {
+                                if (color.startsWith('#')) {
+                                    let hex = color.replace('#', '');
+                                    if (hex.length === 3) hex = hex.split('').map(x => x + x).join('');
+                                    const r = parseInt(hex.substring(0,2), 16);
+                                    const g = parseInt(hex.substring(2,4), 16);
+                                    const b = parseInt(hex.substring(4,6), 16);
+                                    return `rgba(${r},${g},${b},${opacity ?? 1})`;
+                                }
+                                return color;
+                            }
+                            const stops = obj.properties.gradient.stops;
+                            const gradStr = `linear-gradient(to right, ${stops.map(s => `${toRgba(s.color, s.opacity)} ${s.position*100 || 0}%`).join(', ')})`;
+                            element.style.background = gradStr;
+                        } else {
+                            element.style.backgroundColor = obj.properties.color || '#FF0000';
+                        }
+                        
+                        // borderRadius (circle/ellipse만 50%)
+                        element.style.borderRadius = obj.properties.shapeType === 'circle' || obj.properties.shapeType === 'ellipse' ? '50%' : '0';
+                        
+                        // border
+                        if (obj.properties.useShapeBorder) {
+                            element.style.border = `${obj.properties.shapeBorderWidth || 1}px ${obj.properties.shapeBorderStyle || 'solid'} ${obj.properties.shapeBorderColor || '#FFFFFF'}`;
+                        } else {
+                            element.style.border = 'none';
+                        }
+                        
+                        // box-shadow
+                        if (obj.properties.useShapeShadow) {
+                            element.style.boxShadow = `${obj.properties.shapeShadowOffsetX || 0}px ${obj.properties.shapeShadowOffsetY || 0}px ${obj.properties.shapeShadowBlur || 0}px ${obj.properties.shapeShadowColor || '#000000'}`;
+                        } else {
+                            element.style.boxShadow = 'none';
+                        }
+                        
+                        // opacity
+                        if (obj.properties.opacity !== undefined) {
+                            element.style.opacity = obj.properties.opacity;
+                        }
                     }
                     break;
                 }
