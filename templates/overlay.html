@@ -522,6 +522,7 @@
                     textContainer.style.width = '100%';
                     textContainer.style.height = '100%';
                     textContainer.style.boxSizing = 'border-box';
+                    element.style.opacity = obj.properties.opacity !== undefined ? obj.properties.opacity : 1;
                     
                     // 텍스트 배경 설정
                     if (obj.properties.useTextBackground) {
@@ -571,6 +572,7 @@
                     img.style.width = '100%';
                     img.style.height = '100%';
                     img.style.objectFit = 'contain';
+                    element.style.opacity = obj.properties.opacity !== undefined ? obj.properties.opacity : 1;
                     element.appendChild(img);
                     break;
                     
@@ -672,6 +674,7 @@
                     timerContainer.style.width = '100%';
                     timerContainer.style.height = '100%';
                     timerContainer.style.boxSizing = 'border-box';
+                    element.style.opacity = obj.properties.opacity !== undefined ? obj.properties.opacity : 1;
                     
                     // 타이머 배경 설정
                     if (obj.properties.useBackground) {
