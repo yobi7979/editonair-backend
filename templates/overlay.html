@@ -532,6 +532,7 @@
                     // 투명도
                     element.style.setProperty('--target-opacity', obj.properties.opacity !== undefined ? obj.properties.opacity : 1);
                     element.style.opacity = obj.properties.opacity !== undefined ? obj.properties.opacity : 1;
+                    textContainer.style.opacity = obj.properties.opacity !== undefined ? obj.properties.opacity : 1;
                     // 텍스트 요소 생성
                     const textElement = document.createElement('div');
                     textElement.textContent = obj.properties.content || '';
@@ -692,6 +693,8 @@
                     timerElement.style.margin = '0';
                     timerElement.style.padding = '0';
                     timerElement.style.letterSpacing = (obj.properties.letterSpacing !== undefined ? obj.properties.letterSpacing : 0) + 'px';
+                    // 타이머 기본 표시(초기값)
+                    timerElement.textContent = obj.properties.content || '00:00';
                     timerContainer.appendChild(timerElement);
                     element.appendChild(timerContainer);
                     break;
