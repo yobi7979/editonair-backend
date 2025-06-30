@@ -393,16 +393,16 @@
         const socket = io();
         const container = document.getElementById('overlay-container');
         const motionManager = new MotionManager(container);
-        let currentScene = {{ scene|tojson if scene else 'null' }};
+        let currentScene = null; // 초기에는 null로 설정
         let skipInMotion = sessionStorage.getItem('skipInMotion') === 'true';
-        let isBroadcasting = false;
+        let isBroadcasting = true; // 기본적으로 true로 설정
 
-        // 초기 씬 데이터 로드
-        if (currentScene) {
-            motionManager.updateScene(currentScene, skipInMotion);
-            // 플래그 초기화
-            sessionStorage.removeItem('skipInMotion');
-        }
+        // 초기 씬 데이터 로드 - 주석 처리하여 빈화면으로 시작
+        // if (currentScene) {
+        //     motionManager.updateScene(currentScene, skipInMotion);
+        //     // 플래그 초기화
+        //     sessionStorage.removeItem('skipInMotion');
+        // }
 
         // 웹소켓 이벤트 핸들러
         socket.on('connect', () => {
@@ -433,22 +433,35 @@
         socket.on('scene_change', async function(data) {
             console.log('Scene change event received:', data);
             
-            // 모든 인모션이 완료될 때까지 대기
-            const allElements = container.querySelectorAll('.overlay-object');
-            const allCompleted = Array.from(allElements).every(el => el.dataset.inMotionCompleted === 'true');
-            
-            if (!allCompleted) {
-                console.log('Waiting for all in-motions to complete...');
-                return;
-            }
+            // 현재 씬이 있으면 아웃모션 적용
+            if (currentScene) {
+                // 모든 인모션이 완료될 때까지 대기
+                const allElements = container.querySelectorAll('.overlay-object');
+                const allCompleted = Array.from(allElements).every(el => el.dataset.inMotionCompleted === 'true');
+                
+                if (!allCompleted) {
+                    console.log('Waiting for all in-motions to complete...');
+                    return;
+                }
 
-            // 아웃모션 적용 및 완료 대기
-            await motionManager.waitForAllOutMotions();
+                // 아웃모션 적용 및 완료 대기
+                await motionManager.waitForAllOutMotions();
+            }
             
-            // 페이지 새로고침
-            setTimeout(() => {
-                window.location.reload();
-            }, 100);
+            // 새로운 씬 데이터 요청
+            try {
+                const response = await fetch(`/api/scenes/${data.scene_id}`);
+                const newScene = await response.json();
+                console.log('New scene loaded:', newScene);
+                
+                // 새 씬으로 업데이트
+                currentScene = newScene;
+                motionManager.updateScene(newScene, false); // skipInMotion = false (인모션 적용)
+                
+                console.log('New scene applied successfully');
+            } catch (error) {
+                console.error('Error loading new scene:', error);
+            }
         });
 
         socket.on('scene_out', async function(data) {
