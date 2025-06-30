@@ -25,6 +25,7 @@
             position: absolute;
             pointer-events: none;
             transform-origin: center center;
+            --target-opacity: 1;
         }
         /* 효과 애니메이션 */
         .fadeIn {
@@ -94,10 +95,10 @@
 
         @keyframes fadeIn {
             from { opacity: 0; }
-            to { opacity: 1; }
+            to { opacity: var(--target-opacity, 1); }
         }
         @keyframes fadeOut {
-            from { opacity: 1; }
+            from { opacity: var(--target-opacity, 1); }
             to { opacity: 0; }
         }
         @keyframes slideUpIn {
@@ -522,6 +523,7 @@
                     textContainer.style.width = '100%';
                     textContainer.style.height = '100%';
                     textContainer.style.boxSizing = 'border-box';
+                    element.style.setProperty('--target-opacity', obj.properties.opacity !== undefined ? obj.properties.opacity : 1);
                     element.style.opacity = obj.properties.opacity !== undefined ? obj.properties.opacity : 1;
                     
                     // 텍스트 배경 설정
@@ -572,6 +574,7 @@
                     img.style.width = '100%';
                     img.style.height = '100%';
                     img.style.objectFit = 'contain';
+                    element.style.setProperty('--target-opacity', obj.properties.opacity !== undefined ? obj.properties.opacity : 1);
                     element.style.opacity = obj.properties.opacity !== undefined ? obj.properties.opacity : 1;
                     element.appendChild(img);
                     break;
@@ -674,6 +677,7 @@
                     timerContainer.style.width = '100%';
                     timerContainer.style.height = '100%';
                     timerContainer.style.boxSizing = 'border-box';
+                    element.style.setProperty('--target-opacity', obj.properties.opacity !== undefined ? obj.properties.opacity : 1);
                     element.style.opacity = obj.properties.opacity !== undefined ? obj.properties.opacity : 1;
                     
                     // 타이머 배경 설정
