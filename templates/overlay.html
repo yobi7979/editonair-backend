@@ -393,15 +393,12 @@
         const socket = io();
         const container = document.getElementById('overlay-container');
         const motionManager = new MotionManager(container);
-        let currentScene = {{ scene|tojson if scene else 'null' }};
+        // let currentScene = {{ scene|tojson if scene else 'null' }};
+        // 최초 로딩 시에는 무조건 더미(빈) 페이지로 시작
+        let currentScene = null;
         let skipInMotion = sessionStorage.getItem('skipInMotion') === 'true';
-
-        // 초기 씬 데이터 로드
-        if (currentScene) {
-            motionManager.updateScene(currentScene, skipInMotion);
-            // 플래그 초기화
-            sessionStorage.removeItem('skipInMotion');
-        }
+        // 방송 시작 신호가 오기 전까지는 씬을 무시
+        let isBroadcasting = false;
 
         // 웹소켓 이벤트 핸들러
         socket.on('connect', () => {
@@ -414,11 +411,18 @@
             {% endif %}
         });
 
+        // 방송 시작 신호가 오면 그때부터 씬 적용
+        socket.on('start_broadcast', () => {
+            isBroadcasting = true;
+            // 필요시 서버에 씬 데이터 요청
+            socket.emit('request_scene');
+        });
+
+        // 씬 데이터는 방송 시작 전까지 무시
         socket.on('scene_update', (scene) => {
-            if (scene.id === currentScene?.id) {
-                currentScene = scene;
-                motionManager.updateScene(scene);
-            }
+            if (!isBroadcasting) return;
+            currentScene = scene;
+            motionManager.updateScene(scene);
         });
 
         socket.on('scene_change', async function(data) {
