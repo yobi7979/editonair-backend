@@ -13,14 +13,21 @@ from PIL import Image
 import socket
 import re
 import shutil
-# flask-cors 추가
-from flask_cors import CORS
 
 # Initialize Flask app
 app = Flask(__name__)
 
-# flask-cors로 CORS 허용 (개발/운영 모두)
-CORS(app, origins=["http://localhost:5173", "https://editonair-frontend.vercel.app"], supports_credentials=True)
+# CORS 미들웨어 추가
+@app.after_request
+def after_request(response):
+    response.headers['Access-Control-Allow-Origin'] = 'http://localhost:5173'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
+    response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
+    return response
+
+# (Flask-CORS import/use 흔적이 있다면 아래처럼 주석 처리)
+# from flask_cors import CORS
+# CORS(app)
 
 # SocketIO를 threading 모드로 명시
 socketio = SocketIO(app, async_mode='threading', cors_allowed_origins="*")  # Initialize SocketIO
@@ -441,15 +448,13 @@ def push_scene(scene_id):
         scene = Scene.query.get_or_404(scene_id)
         current_pushed_scene_id = scene_id
         print(f"Scene {scene_id} pushed successfully")
-        # 씬 변경 알림
+        # broadcast 옵션 없이 emit
         socketio.emit('scene_change', {
             'scene_id': scene_id,
             'transition': 'fade',
             'duration': 1.0,
             'clear_effects': True
         })
-        # 실제 씬 데이터도 함께 송출
-        socketio.emit('scene_update', scene_to_dict(scene))
         return jsonify({'status': 'success', 'scene_id': scene_id})
     except Exception as e:
         print(f"Error in push_scene: {str(e)}")
@@ -1010,17 +1015,6 @@ def delete_project_sequence(project_name, sequence_name):
         return jsonify({'message': 'Sequence deleted'}), 200
     else:
         return jsonify({'error': 'Sequence not found'}), 404
-
-@app.route('/api/start_broadcast', methods=['POST', 'OPTIONS'])
-def start_broadcast():
-    if request.method == 'OPTIONS':
-        # CORS preflight 요청에 대한 응답
-        return '', 200
-    data = request.get_json()
-    project_id = data.get('project_id')
-    # 오버레이 클라이언트에 start_broadcast 소켓 이벤트 emit
-    socketio.emit('start_broadcast', {'project_id': project_id})
-    return jsonify({'status': 'ok'})
 
 # --- Main Entry Point ---
 
