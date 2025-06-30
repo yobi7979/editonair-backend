@@ -123,6 +123,8 @@ class Object(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
     scene = db.relationship('Scene', back_populates='objects')
+    locked = db.Column(db.Boolean, default=False)
+    visible = db.Column(db.Boolean, default=True)
 
     def __repr__(self):
         return f'<Object {self.name} ({self.type})>'
@@ -162,7 +164,9 @@ def object_to_dict(obj):
         'timing': json.loads(obj.timing) if obj.timing else {},
         'scene_id': obj.scene_id,
         'created_at': obj.created_at.isoformat() if obj.created_at else None,
-        'updated_at': obj.updated_at.isoformat() if obj.updated_at else None
+        'updated_at': obj.updated_at.isoformat() if obj.updated_at else None,
+        'locked': getattr(obj, 'locked', False),
+        'visible': getattr(obj, 'visible', True),
     }
 
 
@@ -543,7 +547,10 @@ def update_object(object_id):
     obj.in_motion = json.dumps(data.get('in_motion', json.loads(obj.in_motion or '{}')))
     obj.out_motion = json.dumps(data.get('out_motion', json.loads(obj.out_motion or '{}')))
     obj.timing = json.dumps(data.get('timing', json.loads(obj.timing or '{}')))
-    
+    if 'locked' in data:
+        obj.locked = data['locked']
+    if 'visible' in data:
+        obj.visible = data['visible']
     try:
         db.session.commit()
         print("Successfully updated object in database")
