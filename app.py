@@ -13,21 +13,14 @@ from PIL import Image
 import socket
 import re
 import shutil
+# flask-cors 추가
+from flask_cors import CORS
 
 # Initialize Flask app
 app = Flask(__name__)
 
-# CORS 미들웨어 추가
-@app.after_request
-def after_request(response):
-    response.headers['Access-Control-Allow-Origin'] = 'http://localhost:5173'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
-    response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
-    return response
-
-# (Flask-CORS import/use 흔적이 있다면 아래처럼 주석 처리)
-# from flask_cors import CORS
-# CORS(app)
+# flask-cors로 CORS 허용 (개발/운영 모두)
+CORS(app, origins=["http://localhost:5173", "https://editonair-frontend.vercel.app"], supports_credentials=True)
 
 # SocketIO를 threading 모드로 명시
 socketio = SocketIO(app, async_mode='threading', cors_allowed_origins="*")  # Initialize SocketIO
