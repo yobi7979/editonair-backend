@@ -523,16 +523,15 @@
                     textContainer.style.width = '100%';
                     textContainer.style.height = '100%';
                     textContainer.style.boxSizing = 'border-box';
-                    element.style.setProperty('--target-opacity', obj.properties.opacity !== undefined ? obj.properties.opacity : 1);
-                    element.style.opacity = obj.properties.opacity !== undefined ? obj.properties.opacity : 1;
-                    
-                    // 텍스트 배경 설정
+                    // 배경
                     if (obj.properties.useTextBackground) {
                         textContainer.style.backgroundColor = obj.properties.textBackgroundColor || '#000000';
                         textContainer.style.borderRadius = `${obj.properties.textBackgroundBorderRadius || 0}px`;
                         textContainer.style.padding = `${obj.properties.textBackgroundPadding || 8}px`;
                     }
-                    
+                    // 투명도
+                    element.style.setProperty('--target-opacity', obj.properties.opacity !== undefined ? obj.properties.opacity : 1);
+                    element.style.opacity = obj.properties.opacity !== undefined ? obj.properties.opacity : 1;
                     // 텍스트 요소 생성
                     const textElement = document.createElement('div');
                     textElement.textContent = obj.properties.content || '';
@@ -551,19 +550,15 @@
                     textElement.style.margin = '0';
                     textElement.style.padding = '0';
                     textElement.style.letterSpacing = (obj.properties.letterSpacing !== undefined ? obj.properties.letterSpacing : 0) + 'px';
-                    
-                    // 텍스트 테두리 설정
+                    // 테두리
                     if (obj.properties.useTextBorder) {
                         textElement.style.webkitTextStrokeWidth = `${obj.properties.textBorderWidth || 1}px`;
                         textElement.style.webkitTextStrokeColor = obj.properties.textBorderColor || '#FFFFFF';
                     }
-                    
-                    // 텍스트 그림자 설정
+                    // 그림자
                     if (obj.properties.useTextShadow) {
                         textElement.style.textShadow = `${obj.properties.textShadowOffsetX || 0}px ${obj.properties.textShadowOffsetY || 0}px ${obj.properties.textShadowBlur || 0}px ${obj.properties.textShadowColor || '#000000'}`;
                     }
-                    
-                    // 컨테이너에 텍스트 요소 추가
                     textContainer.appendChild(textElement);
                     element.appendChild(textContainer);
                     break;
@@ -571,9 +566,11 @@
                 case 'image':
                     const img = document.createElement('img');
                     img.src = obj.properties.src || '';
-                    img.style.width = '100%';
-                    img.style.height = '100%';
+                    img.style.width = obj.properties.width ? obj.properties.width + 'px' : '100%';
+                    img.style.height = obj.properties.height ? obj.properties.height + 'px' : '100%';
                     img.style.objectFit = 'contain';
+                    img.style.display = 'block';
+                    img.style.opacity = obj.properties.opacity !== undefined ? obj.properties.opacity : 1;
                     element.style.setProperty('--target-opacity', obj.properties.opacity !== undefined ? obj.properties.opacity : 1);
                     element.style.opacity = obj.properties.opacity !== undefined ? obj.properties.opacity : 1;
                     element.appendChild(img);
@@ -668,7 +665,6 @@
                 }
 
                 case 'timer':
-                    // 타이머 컨테이너 생성
                     const timerContainer = document.createElement('div');
                     timerContainer.style.display = 'flex';
                     timerContainer.style.alignItems = 'center';
@@ -677,17 +673,11 @@
                     timerContainer.style.width = '100%';
                     timerContainer.style.height = '100%';
                     timerContainer.style.boxSizing = 'border-box';
+                    timerContainer.style.background = 'transparent';
+                    timerContainer.style.opacity = obj.properties.opacity !== undefined ? obj.properties.opacity : 1;
                     element.style.setProperty('--target-opacity', obj.properties.opacity !== undefined ? obj.properties.opacity : 1);
                     element.style.opacity = obj.properties.opacity !== undefined ? obj.properties.opacity : 1;
-                    
-                    // 타이머 배경 설정
-                    if (obj.properties.useBackground) {
-                        timerContainer.style.backgroundColor = obj.properties.backgroundColor || '#000000';
-                        timerContainer.style.borderRadius = `${obj.properties.backgroundBorderRadius || 0}px`;
-                        timerContainer.style.padding = `${obj.properties.backgroundPadding || 8}px`;
-                    }
-                    
-                    // 타이머 요소 생성
+                    // 타이머 텍스트 스타일
                     const timerElement = document.createElement('div');
                     timerElement.className = 'timer-display';
                     timerElement.style.color = obj.properties.color || '#ffffff';
@@ -702,67 +692,6 @@
                     timerElement.style.margin = '0';
                     timerElement.style.padding = '0';
                     timerElement.style.letterSpacing = (obj.properties.letterSpacing !== undefined ? obj.properties.letterSpacing : 0) + 'px';
-
-                    // 타이머 초기화
-                    let timeLeft = obj.properties.duration || 60;
-                    let isRunning = false;
-                    let timerInterval;
-
-                    function updateTimerDisplay() {
-                        const minutes = Math.floor(timeLeft / 60);
-                        const seconds = timeLeft % 60;
-                        timerElement.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-                    }
-
-                    function startTimer() {
-                        if (!isRunning) {
-                            isRunning = true;
-                            timerInterval = setInterval(() => {
-                                if (timeLeft > 0) {
-                                    timeLeft--;
-                                    updateTimerDisplay();
-                                } else {
-                                    clearInterval(timerInterval);
-                                    isRunning = false;
-                                    // 타이머 종료 시 이벤트 발생
-                                    socket.emit('timer_complete', { timer_id: obj.id });
-                                }
-                            }, 1000);
-                        }
-                    }
-
-                    function stopTimer() {
-                        if (isRunning) {
-                            clearInterval(timerInterval);
-                            isRunning = false;
-                        }
-                    }
-
-                    function resetTimer() {
-                        stopTimer();
-                        timeLeft = obj.properties.duration || 60;
-                        updateTimerDisplay();
-                    }
-
-                    // 타이머 컨트롤 이벤트 리스너
-                    socket.on('timer_control', (data) => {
-                        if (data.timer_id === obj.id) {
-                            switch (data.action) {
-                                case 'start':
-                                    startTimer();
-                                    break;
-                                case 'stop':
-                                    stopTimer();
-                                    break;
-                                case 'reset':
-                                    resetTimer();
-                                    break;
-                            }
-                        }
-                    });
-
-                    // 초기 타이머 표시
-                    updateTimerDisplay();
                     timerContainer.appendChild(timerElement);
                     element.appendChild(timerContainer);
                     break;
