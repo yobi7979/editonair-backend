@@ -1009,6 +1009,17 @@ def delete_project_sequence(project_name, sequence_name):
     else:
         return jsonify({'error': 'Sequence not found'}), 404
 
+@app.route('/api/start_broadcast', methods=['POST', 'OPTIONS'])
+def start_broadcast():
+    if request.method == 'OPTIONS':
+        # CORS preflight 요청에 대한 응답
+        return '', 200
+    data = request.get_json()
+    project_id = data.get('project_id')
+    # 오버레이 클라이언트에 start_broadcast 소켓 이벤트 emit
+    socketio.emit('start_broadcast', {'project_id': project_id})
+    return jsonify({'status': 'ok'})
+
 # --- Main Entry Point ---
 
 # Railway에서 작동하도록 전역에서 초기화
