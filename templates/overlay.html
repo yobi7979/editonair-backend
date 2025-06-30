@@ -414,6 +414,14 @@
             {% endif %}
         });
 
+        // 방송 시작 신호가 오면 그때부터 씬 적용
+        socket.on('start_broadcast', () => {
+            isBroadcasting = true;
+            // 필요시 서버에 씬 데이터 요청
+            socket.emit('request_scene');
+        });
+
+        // 씬 데이터는 방송 시작 전까지 무시
         socket.on('scene_update', (scene) => {
             if (scene.id === currentScene?.id) {
                 currentScene = scene;
@@ -443,6 +451,7 @@
         });
 
         socket.on('scene_out', async function(data) {
+            if (!isBroadcasting) return;
             console.log('Scene out event received:', data);
             console.log('Current scene before out motion:', currentScene);
             console.log('MotionManager current scene:', motionManager.currentScene);
