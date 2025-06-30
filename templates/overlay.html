@@ -900,6 +900,12 @@
                 element.style.transform = `rotate(${obj.properties.rotation}deg)`;
             }
             
+            // 애니메이션이 끝난 후 opacity를 --target-opacity로 강제 덮어쓰기
+            element.addEventListener('animationend', function() {
+                const targetOpacity = element.style.getPropertyValue('--target-opacity') || 1;
+                element.style.opacity = targetOpacity;
+            });
+            
             return element;
         }
     </script>
