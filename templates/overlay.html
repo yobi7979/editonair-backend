@@ -395,6 +395,7 @@
         const motionManager = new MotionManager(container);
         let currentScene = {{ scene|tojson if scene else 'null' }};
         let skipInMotion = sessionStorage.getItem('skipInMotion') === 'true';
+        let isBroadcasting = false;
 
         // 초기 씬 데이터 로드
         if (currentScene) {
