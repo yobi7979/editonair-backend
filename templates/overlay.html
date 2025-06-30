@@ -452,7 +452,6 @@
         });
 
         socket.on('scene_out', async function(data) {
-            if (!isBroadcasting) return;
             console.log('Scene out event received:', data);
             console.log('Current scene before out motion:', currentScene);
             console.log('MotionManager current scene:', motionManager.currentScene);
