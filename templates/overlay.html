@@ -411,11 +411,18 @@
             {% endif %}
         });
 
-        // 방송 시작 신호가 오면 그때부터 씬 적용
+        // 온에어/오프라인 신호 처리
         socket.on('start_broadcast', () => {
             isBroadcasting = true;
-            // 필요시 서버에 씬 데이터 요청
-            socket.emit('request_scene');
+            // 더미 페이지에서 온에어로 전환 시, 씬 데이터 요청(필요시)
+            // socket.emit('request_scene');
+            // 화면 초기화(더미 제거)
+            container.innerHTML = '';
+        });
+        socket.on('stop_broadcast', () => {
+            isBroadcasting = false;
+            // 즉시 더미(빈) 페이지로 전환
+            container.innerHTML = '';
         });
 
         // 씬 데이터는 방송 시작 전까지 무시
@@ -447,6 +454,7 @@
         });
 
         socket.on('scene_out', async function(data) {
+            if (!isBroadcasting) return;
             console.log('Scene out event received:', data);
             console.log('Current scene before out motion:', currentScene);
             console.log('MotionManager current scene:', motionManager.currentScene);
