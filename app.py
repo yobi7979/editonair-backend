@@ -441,13 +441,15 @@ def push_scene(scene_id):
         scene = Scene.query.get_or_404(scene_id)
         current_pushed_scene_id = scene_id
         print(f"Scene {scene_id} pushed successfully")
-        # broadcast 옵션 없이 emit
+        # 씬 변경 알림
         socketio.emit('scene_change', {
             'scene_id': scene_id,
             'transition': 'fade',
             'duration': 1.0,
             'clear_effects': True
         })
+        # 실제 씬 데이터도 함께 송출
+        socketio.emit('scene_update', scene_to_dict(scene))
         return jsonify({'status': 'success', 'scene_id': scene_id})
     except Exception as e:
         print(f"Error in push_scene: {str(e)}")
