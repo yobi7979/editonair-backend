@@ -31,6 +31,11 @@
             /* 회전이 확실히 보이도록 z-index 추가 */
             z-index: 1000;
         }
+        
+        /* 회전된 객체를 위한 추가 스타일 */
+        .rotated-object {
+            transform-origin: center center !important;
+        }
         /* 효과 애니메이션 */
         .fadeIn {
             animation: fadeIn 1s ease-in;
@@ -849,6 +854,9 @@
                 element.style.transform = finalTransform;
                 // 회전이 확실히 적용되도록 강제 설정
                 element.style.setProperty('transform', finalTransform, 'important');
+                // 추가로 CSS 클래스를 통한 회전 적용
+                element.classList.add('rotated-object');
+                element.setAttribute('data-rotation', obj.properties.rotation);
                 console.log(`Final transform for object ${obj.id}:`, finalTransform);
                 console.log(`Applied transform style:`, element.style.transform);
             }
