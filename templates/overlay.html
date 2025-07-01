@@ -195,6 +195,52 @@
 <body>
     <div id="overlay-container"></div>
     <script>
+        // 프리로딩 캐시
+        let preloadCache = null;
+        let isPreloading = false;
+        
+        // 프리로딩 함수
+        async function preloadProjectData(projectName) {
+            if (isPreloading) return;
+            isPreloading = true;
+            
+            try {
+                console.log('프리로딩 시작:', projectName);
+                const response = await fetch(`/api/preload/${encodeURIComponent(projectName)}`);
+                if (response.ok) {
+                    preloadCache = await response.json();
+                    console.log('프리로딩 완료:', preloadCache);
+                    
+                    // 이미지 리소스 프리로딩
+                    preloadImages(preloadCache);
+                }
+            } catch (error) {
+                console.warn('프리로딩 실패:', error);
+            } finally {
+                isPreloading = false;
+            }
+        }
+        
+        // 이미지 리소스 프리로딩
+        function preloadImages(cache) {
+            if (!cache.scenes) return;
+            
+            const imageUrls = new Set();
+            cache.scenes.forEach(scene => {
+                scene.objects.forEach(obj => {
+                    if (obj.type === 'image' && obj.properties.src) {
+                        imageUrls.add(obj.properties.src);
+                    }
+                });
+            });
+            
+            console.log('이미지 프리로딩 시작:', imageUrls.size, '개');
+            imageUrls.forEach(url => {
+                const img = new Image();
+                img.src = url;
+            });
+        }
+        
         // 모션 관리 클래스
         class MotionManager {
             constructor(container) {
@@ -419,6 +465,10 @@
         //     sessionStorage.removeItem('skipInMotion');
         // }
 
+        // 페이지 로드 시 프리로딩 시작
+        const projectName = '{{ project.name }}';
+        preloadProjectData(projectName);
+        
         // 웹소켓 이벤트 핸들러
         socket.on('connect', () => {
             const projectId = {{ project.id }};
@@ -463,20 +513,33 @@
                 await motionManager.waitForAllOutMotions();
             }
             
-            // 새로운 씬 데이터 요청
-            try {
-                const response = await fetch(`/api/scenes/${data.scene_id}`);
-                const newScene = await response.json();
-                console.log('New scene loaded:', newScene);
-                
-                // 새 씬으로 업데이트
-                currentScene = newScene;
-                motionManager.updateScene(newScene, false); // skipInMotion = false (인모션 적용)
-                
-                console.log('New scene applied successfully');
-            } catch (error) {
-                console.error('Error loading new scene:', error);
+            // 프리로딩된 데이터가 있으면 사용, 없으면 API 호출
+            let newScene;
+            if (preloadCache && preloadCache.scenes) {
+                const cachedScene = preloadCache.scenes.find(s => s.id === data.scene_id);
+                if (cachedScene) {
+                    console.log('Using preloaded scene data:', cachedScene);
+                    newScene = cachedScene;
+                }
             }
+            
+            if (!newScene) {
+                // 프리로딩된 데이터가 없으면 API 호출
+                try {
+                    const response = await fetch(`/api/scenes/${data.scene_id}`);
+                    newScene = await response.json();
+                    console.log('New scene loaded from API:', newScene);
+                } catch (error) {
+                    console.error('Error loading new scene:', error);
+                    return;
+                }
+            }
+            
+            // 새 씬으로 업데이트
+            currentScene = newScene;
+            motionManager.updateScene(newScene, false); // skipInMotion = false (인모션 적용)
+            
+            console.log('New scene applied successfully');
         });
 
         socket.on('scene_out', async function(data) {

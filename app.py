@@ -1037,6 +1037,51 @@ def delete_project_sequence(project_name, sequence_name):
     else:
         return jsonify({'error': 'Sequence not found'}), 404
 
+@app.route('/api/preload/<project_name>')
+def preload_project(project_name):
+    """프로젝트 데이터를 미리 로드하여 캐시"""
+    try:
+        # 프로젝트 정보 가져오기
+        project = Project.query.filter_by(name=project_name).first()
+        if not project:
+            return jsonify({'error': 'Project not found'}), 404
+        
+        # 씬 데이터 가져오기
+        scenes = Scene.query.filter_by(project_id=project.id).all()
+        scene_data = []
+        
+        for scene in scenes:
+            objects = Object.query.filter_by(scene_id=scene.id).all()
+            object_data = []
+            
+            for obj in objects:
+                object_data.append({
+                    'id': obj.id,
+                    'type': obj.type,
+                    'properties': json.loads(obj.properties) if obj.properties else {}
+                })
+            
+            scene_data.append({
+                'id': scene.id,
+                'name': scene.name,
+                'objects': object_data
+            })
+        
+        # 프리로딩 데이터 반환
+        preload_data = {
+            'project': {
+                'id': project.id,
+                'name': project.name
+            },
+            'scenes': scene_data,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        return jsonify(preload_data)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 # --- Main Entry Point ---
 
 # Railway에서 작동하도록 전역에서 초기화
