@@ -27,7 +27,9 @@
             transform-origin: center center;
             --target-opacity: 1;
             /* 회전 디버깅을 위한 임시 스타일 */
-            border: 1px solid red;
+            border: 2px solid red;
+            /* 회전이 확실히 보이도록 z-index 추가 */
+            z-index: 1000;
         }
         /* 효과 애니메이션 */
         .fadeIn {
@@ -845,7 +847,10 @@
                 const rotationTransform = `rotate(${obj.properties.rotation}deg)`;
                 const finalTransform = existingTransform ? `${existingTransform} ${rotationTransform}` : rotationTransform;
                 element.style.transform = finalTransform;
+                // 회전이 확실히 적용되도록 강제 설정
+                element.style.setProperty('transform', finalTransform, 'important');
                 console.log(`Final transform for object ${obj.id}:`, finalTransform);
+                console.log(`Applied transform style:`, element.style.transform);
             }
             
             // 애니메이션이 끝난 후 opacity를 --target-opacity로 강제 덮어쓰기
