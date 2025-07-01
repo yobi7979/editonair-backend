@@ -837,11 +837,15 @@
             
             // 회전 설정
             if (obj.properties.rotation !== undefined && obj.properties.rotation !== null) {
+                console.log(`Applying rotation to object ${obj.id}: ${obj.properties.rotation}deg`);
+                // transform-origin을 명시적으로 설정
+                element.style.transformOrigin = 'center center';
                 // 기존 transform이 있으면 병합, 없으면 새로 생성
                 const existingTransform = element.style.transform || '';
                 const rotationTransform = `rotate(${obj.properties.rotation}deg)`;
                 const finalTransform = existingTransform ? `${existingTransform} ${rotationTransform}` : rotationTransform;
                 element.style.transform = finalTransform;
+                console.log(`Final transform for object ${obj.id}:`, finalTransform);
             }
             
             // 애니메이션이 끝난 후 opacity를 --target-opacity로 강제 덮어쓰기
