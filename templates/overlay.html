@@ -500,9 +500,6 @@
 
         // 객체 생성 함수
         function createObjectElement(obj) {
-            console.log('Creating element for object:', obj);
-            console.log('Object properties:', obj.properties);
-            console.log('Rotation value:', obj.properties.rotation);
             const element = document.createElement('div');
             element.className = 'overlay-object';
             element.id = `obj-${obj.id}`;
@@ -839,17 +836,12 @@
             element.style.opacity = obj.properties.opacity !== undefined ? obj.properties.opacity : 1;
             
             // 회전 설정
-            console.log(`Checking rotation for object ${obj.id}:`, obj.properties.rotation);
             if (obj.properties.rotation !== undefined && obj.properties.rotation !== null) {
-                console.log(`Applying rotation to object ${obj.id}: ${obj.properties.rotation}deg`);
                 // 기존 transform이 있으면 병합, 없으면 새로 생성
                 const existingTransform = element.style.transform || '';
                 const rotationTransform = `rotate(${obj.properties.rotation}deg)`;
                 const finalTransform = existingTransform ? `${existingTransform} ${rotationTransform}` : rotationTransform;
                 element.style.transform = finalTransform;
-                console.log(`Final transform for object ${obj.id}:`, finalTransform);
-            } else {
-                console.log(`No rotation applied to object ${obj.id} (rotation value: ${obj.properties.rotation})`);
             }
             
             // 애니메이션이 끝난 후 opacity를 --target-opacity로 강제 덮어쓰기
