@@ -218,7 +218,16 @@
                     element.addEventListener('animationend', () => {
                         element.classList.remove(className);
                         element.style.animation = 'none';
-                        if (style.transform) element.style.transform = style.transform;
+                        
+                        // 오브젝트의 원래 rotation transform을 다시 적용
+                        if (obj.properties.rotation !== undefined && obj.properties.rotation !== null) {
+                            const rotationTransform = `rotate(${obj.properties.rotation}deg)`;
+                            element.style.transform = rotationTransform;
+                            element.style.setProperty('transform', rotationTransform, 'important');
+                        } else if (style.transform) {
+                            element.style.transform = style.transform;
+                        }
+                        
                         if (style.opacity) element.style.opacity = style.opacity;
                         element.dataset.inMotionCompleted = 'true';
                         this.checkAllInMotionsCompleted();
