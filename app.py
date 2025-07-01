@@ -34,7 +34,15 @@ socketio = SocketIO(app, async_mode='threading', cors_allowed_origins="*")  # In
 
 # Configure database
 basedir = os.path.abspath(os.path.dirname(__file__))
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'editor_data.db')
+# PostgreSQL을 우선 사용하고, 없으면 SQLite 사용
+database_url = os.environ.get('DATABASE_URL')
+if database_url:
+    # Railway PostgreSQL URL을 SQLAlchemy 형식으로 변환
+    if database_url.startswith('postgres://'):
+        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+else:
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'editor_data.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Initialize SQLAlchemy
