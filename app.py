@@ -543,7 +543,13 @@ def update_object(object_id):
     obj.type = data.get('type', obj.type)
     if 'order' in data:
         obj.order = data.get('order')
-    obj.properties = json.dumps(data.get('properties', json.loads(obj.properties or '{}')))
+    
+    # properties 업데이트 시 rotation 값 확인
+    new_properties = data.get('properties', json.loads(obj.properties or '{}'))
+    if 'rotation' in new_properties:
+        print(f"Rotation value being saved: {new_properties['rotation']} (type: {type(new_properties['rotation'])})")
+    
+    obj.properties = json.dumps(new_properties)
     obj.in_motion = json.dumps(data.get('in_motion', json.loads(obj.in_motion or '{}')))
     obj.out_motion = json.dumps(data.get('out_motion', json.loads(obj.out_motion or '{}')))
     obj.timing = json.dumps(data.get('timing', json.loads(obj.timing or '{}')))
