@@ -665,6 +665,15 @@
                         bottomRight: 0
                     };
 
+                    // SVG 컨테이너 생성
+                    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                    svg.setAttribute('width', width);
+                    svg.setAttribute('height', height);
+                    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+                    svg.style.display = 'block';
+                    svg.style.width = '100%';
+                    svg.style.height = '100%';
+
                     let shapeElement;
                     if (obj.properties.shapeType === 'triangle') {
                         shapeElement = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
@@ -708,7 +717,8 @@
                         shapeElement.style.filter = `drop-shadow(${obj.properties.shapeShadowOffsetX||0}px ${obj.properties.shapeShadowOffsetY||0}px ${obj.properties.shapeShadowBlur||0}px ${obj.properties.shapeShadowColor||'#000'})`;
                     }
 
-                    element.appendChild(shapeElement);
+                    svg.appendChild(shapeElement);
+                    element.appendChild(svg);
                     break;
                 }
 
