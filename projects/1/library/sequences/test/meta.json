@@ -1,0 +1,136 @@
+{
+  "name": "test",
+  "sprite": "sprite.png",
+  "frame_count": 25,
+  "frame_width": 1920,
+  "frame_height": 1080,
+  "frame_sizes": [
+    {
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "width": 1920,
+      "height": 1080
+    }
+  ],
+  "original_filenames": [
+    "testtest_00000.png",
+    "testtest_00001.png",
+    "testtest_00002.png",
+    "testtest_00003.png",
+    "testtest_00004.png",
+    "testtest_00005.png",
+    "testtest_00006.png",
+    "testtest_00007.png",
+    "testtest_00008.png",
+    "testtest_00009.png",
+    "testtest_00010.png",
+    "testtest_00011.png",
+    "testtest_00012.png",
+    "testtest_00013.png",
+    "testtest_00014.png",
+    "testtest_00015.png",
+    "testtest_00016.png",
+    "testtest_00017.png",
+    "testtest_00018.png",
+    "testtest_00019.png",
+    "testtest_00020.png",
+    "testtest_00021.png",
+    "testtest_00022.png",
+    "testtest_00023.png",
+    "testtest_00024.png"
+  ]
+}
