@@ -656,57 +656,20 @@
                 case 'shape': {
                     const width = obj.properties.width || 100;
                     const height = obj.properties.height || 100;
-                    element.style.left = (obj.properties.x || 0) + 'px';
-                    element.style.top = (obj.properties.y || 0) + 'px';
-                    element.style.position = 'absolute';
-                    element.style.display = 'block';
-                    element.style.pointerEvents = 'none';
-                    
-                    // 모든 도형을 SVG로 렌더링
-                    let fill = obj.properties.color || '#FF0000';
-                    let gradDef = '';
-                    
-                    // 그라데이션 처리
-                    if (obj.properties.fillType === 'gradient' && obj.properties.gradient && obj.properties.gradient.stops) {
-                        const gradId = `overlay-shape-grad-${obj.id}`;
-                        fill = `url(#${gradId})`;
-                        // 그라데이션 각도 계산
-                        const angle = obj.properties.gradient.angle || 0;
-                        const radians = (angle * Math.PI) / 180;
-                        const x1 = 0.5 - Math.cos(radians) * 0.5;
-                        const y1 = 0.5 - Math.sin(radians) * 0.5;
-                        const x2 = 0.5 + Math.cos(radians) * 0.5;
-                        const y2 = 0.5 + Math.sin(radians) * 0.5;
-                        gradDef = `<defs><linearGradient id="${gradId}" x1="${x1*100}%" y1="${y1*100}%" x2="${x2*100}%" y2="${y2*100}%">`;
-                        obj.properties.gradient.stops.forEach((s, i) => {
-                            gradDef += `<stop offset="${(s.position||0)*100}%" stop-color="${s.color}" stop-opacity="${s.opacity ?? 1}" />`;
-                        });
-                        gradDef += '</linearGradient></defs>';
-                    }
-                    
-                    // SVG 생성
-                    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-                    svg.setAttribute('width', width);
-                    svg.setAttribute('height', height);
-                    svg.style.position = 'absolute';
-                    svg.style.left = '0';
-                    svg.style.top = '0';
-                    svg.style.pointerEvents = 'none';
-                    
-                    // 그라데이션 정의 추가
-                    if (gradDef) {
-                        svg.innerHTML = gradDef;
-                    }
-                    
+                    const fill = obj.properties.color || '#FF0000';
+                    const opacity = obj.properties.opacity !== undefined ? obj.properties.opacity : 1;
+                    const cornerRadius = obj.properties.cornerRadius || {
+                        topLeft: 0,
+                        topRight: 0,
+                        bottomLeft: 0,
+                        bottomRight: 0
+                    };
+
                     let shapeElement;
-                    
-                    // 도형 타입별 SVG 요소 생성
                     if (obj.properties.shapeType === 'triangle') {
-                        // 삼각형
                         shapeElement = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
                         shapeElement.setAttribute('points', `${width/2},0 0,${height} ${width},${height}`);
                     } else if (obj.properties.shapeType === 'circle' || obj.properties.shapeType === 'ellipse') {
-                        // 원형/타원
                         shapeElement = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
                         shapeElement.setAttribute('cx', width/2);
                         shapeElement.setAttribute('cy', height/2);
@@ -714,37 +677,38 @@
                         shapeElement.setAttribute('ry', height/2);
                     } else {
                         // 사각형 (box)
-                        shapeElement = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-                        shapeElement.setAttribute('x', '0');
-                        shapeElement.setAttribute('y', '0');
-                        shapeElement.setAttribute('width', width);
-                        shapeElement.setAttribute('height', height);
+                        shapeElement = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                        
+                        // SVG path 생성
+                        const path = [
+                            `M${cornerRadius.topLeft},0`, // 시작점 (좌상단)
+                            `h${width - cornerRadius.topLeft - cornerRadius.topRight}`, // 상단 가로선
+                            `q${cornerRadius.topRight},0 ${cornerRadius.topRight},${cornerRadius.topRight}`, // 우상단 모서리
+                            `v${height - cornerRadius.topRight - cornerRadius.bottomRight}`, // 우측 세로선
+                            `q0,${cornerRadius.bottomRight} -${cornerRadius.bottomRight},${cornerRadius.bottomRight}`, // 우하단 모서리
+                            `h-${width - cornerRadius.bottomRight - cornerRadius.bottomLeft}`, // 하단 가로선
+                            `q-${cornerRadius.bottomLeft},0 -${cornerRadius.bottomLeft},-${cornerRadius.bottomLeft}`, // 좌하단 모서리
+                            `v-${height - cornerRadius.bottomLeft - cornerRadius.topLeft}`, // 좌측 세로선
+                            `q0,-${cornerRadius.topLeft} ${cornerRadius.topLeft},-${cornerRadius.topLeft}`, // 좌상단 모서리
+                            'z' // 닫기
+                        ].join(' ');
+                        
+                        shapeElement.setAttribute('d', path);
                     }
-                    
-                    // 공통 속성 설정
+
                     shapeElement.setAttribute('fill', fill);
-                    
-                    // 테두리 설정
+                    shapeElement.setAttribute('opacity', opacity);
+
                     if (obj.properties.useShapeBorder) {
                         shapeElement.setAttribute('stroke', obj.properties.shapeBorderColor || '#FFFFFF');
                         shapeElement.setAttribute('stroke-width', obj.properties.shapeBorderWidth || 1);
-                    } else {
-                        shapeElement.setAttribute('stroke', 'none');
                     }
-                    
-                    // 그림자 설정
+
                     if (obj.properties.useShapeShadow) {
-                        const shadowFilter = `drop-shadow(${obj.properties.shapeShadowOffsetX||0}px ${obj.properties.shapeShadowOffsetY||0}px ${obj.properties.shapeShadowBlur||0}px ${obj.properties.shapeShadowColor||'#000'})`;
-                        shapeElement.style.filter = shadowFilter;
+                        shapeElement.style.filter = `drop-shadow(${obj.properties.shapeShadowOffsetX||0}px ${obj.properties.shapeShadowOffsetY||0}px ${obj.properties.shapeShadowBlur||0}px ${obj.properties.shapeShadowColor||'#000'})`;
                     }
-                    
-                    // 투명도 설정
-                    if (obj.properties.opacity !== undefined) {
-                        shapeElement.setAttribute('opacity', obj.properties.opacity);
-                    }
-                    
-                    svg.appendChild(shapeElement);
-                    element.appendChild(svg);
+
+                    element.appendChild(shapeElement);
                     break;
                 }
 
@@ -936,6 +900,28 @@
             });
             
             return element;
+        }
+
+        function applyObjectStyles(element, object) {
+            const properties = object.properties || {};
+            element.style.left = `${properties.x || 0}px`;
+            element.style.top = `${properties.y || 0}px`;
+            element.style.width = `${properties.width || 200}px`;
+            element.style.height = `${properties.height || 100}px`;
+            element.style.opacity = properties.opacity ?? 1;
+
+            // 모서리 둥글기 처리
+            if (properties.cornerRadius) {
+                element.style.borderTopLeftRadius = `${properties.cornerRadius.topLeft || 0}px`;
+                element.style.borderTopRightRadius = `${properties.cornerRadius.topRight || 0}px`;
+                element.style.borderBottomLeftRadius = `${properties.cornerRadius.bottomLeft || 0}px`;
+                element.style.borderBottomRightRadius = `${properties.cornerRadius.bottomRight || 0}px`;
+            }
+
+            // 회전 처리
+            if (properties.rotation) {
+                element.style.transform = `rotate(${properties.rotation}deg)`;
+            }
         }
     </script>
 </body>
