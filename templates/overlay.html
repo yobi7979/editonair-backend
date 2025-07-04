@@ -488,6 +488,38 @@
             }
         });
 
+        // 객체 속성 업데이트 이벤트 핸들러
+        socket.on('object_update', (data) => {
+            console.log('Object update event received:', data);
+            
+            if (!currentScene) return;
+            
+            // 현재 씬의 객체 목록에서 업데이트할 객체 찾기
+            const objIndex = currentScene.objects.findIndex(obj => obj.id === data.object_id);
+            if (objIndex === -1) return;
+            
+            // 객체 속성 업데이트
+            currentScene.objects[objIndex] = {
+                ...currentScene.objects[objIndex],
+                ...data.object
+            };
+            
+            // 기존 객체 요소 제거
+            const oldElement = motionManager.objects.get(data.object_id);
+            if (oldElement) {
+                oldElement.remove();
+                motionManager.objects.delete(data.object_id);
+            }
+            
+            // 새 객체 요소 생성 및 추가
+            const newElement = createObjectElement(currentScene.objects[objIndex]);
+            if (newElement) {
+                motionManager.container.appendChild(newElement);
+                motionManager.objects.set(data.object_id, newElement);
+                newElement.dataset.inMotionCompleted = 'true';
+            }
+        });
+
         socket.on('scene_change', async function(data) {
             console.log('Scene change event received:', data);
             

@@ -568,6 +568,13 @@ def update_object(object_id):
     try:
         db.session.commit()
         print("Successfully updated object in database")
+        
+        # 웹소켓으로 object_update 이벤트 전송
+        socketio.emit('object_update', {
+            'object_id': obj.id,
+            'object': object_to_dict(obj)
+        })
+        
         return jsonify(object_to_dict(obj))
     except Exception as e:
         print(f"Error updating object: {str(e)}")
