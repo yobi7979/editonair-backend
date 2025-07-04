@@ -593,78 +593,64 @@
                     textContainer.style.height = '100%';
                     textContainer.style.boxSizing = 'border-box';
 
-                    // 텍스트 요소 생성
-                    const textElement = document.createElement('div');
-                    textElement.textContent = obj.properties.content || '';
-                    textElement.style.fontFamily = obj.properties.fontFamily || 'Arial';
-                    textElement.style.fontSize = `${obj.properties.fontSize || 24}px`;
-                    textElement.style.fontWeight = obj.properties.fontWeight || 'normal';
-                    textElement.style.opacity = obj.properties.opacity !== undefined ? obj.properties.opacity : 1;
+                    // SVG 생성
+                    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                    svg.style.width = '100%';
+                    svg.style.height = '100%';
+                    svg.style.overflow = 'visible';
 
                     // 그라데이션 또는 단색 적용
+                    let fillValue;
                     if (obj.properties.fillType === 'gradient' && obj.properties.gradient) {
                         const { angle = 0, stops = [] } = obj.properties.gradient;
-                        
-                        // SVG 네임스페이스
-                        const svgNS = "http://www.w3.org/2000/svg";
-                        
-                        // SVG와 defs 요소 생성
-                        const svg = document.createElementNS(svgNS, "svg");
-                        svg.style.width = "0";
-                        svg.style.height = "0";
-                        svg.style.position = "absolute";
-                        
-                        const defs = document.createElementNS(svgNS, "defs");
-                        svg.appendChild(defs);
                         
                         // 그라데이션 ID 생성
                         const gradientId = `text-gradient-${obj.id}`;
                         
                         // linearGradient 요소 생성
-                        const gradient = document.createElementNS(svgNS, 'linearGradient');
+                        const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
                         gradient.setAttribute('id', gradientId);
                         
                         // 그라데이션 각도 계산 (90도 보정)
-                        const radians = ((angle - 90) * Math.PI) / 180;
-                        const x1 = 50 + Math.cos(radians) * 50;
-                        const y1 = 50 + Math.sin(radians) * 50;
-                        const x2 = 50 + Math.cos(radians + Math.PI) * 50;
-                        const y2 = 50 + Math.sin(radians + Math.PI) * 50;
-                        
-                        gradient.setAttribute('x1', `${x1}%`);
-                        gradient.setAttribute('y1', `${y1}%`);
-                        gradient.setAttribute('x2', `${x2}%`);
-                        gradient.setAttribute('y2', `${y2}%`);
+                        gradient.setAttribute('gradientTransform', `rotate(${angle - 90}, 0.5, 0.5)`);
                         
                         // 그라데이션 스톱 추가
                         stops.forEach(stop => {
-                            const stopEl = document.createElementNS(svgNS, 'stop');
+                            const stopEl = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
                             stopEl.setAttribute('offset', `${stop.position * 100}%`);
                             stopEl.setAttribute('stop-color', stop.color);
                             stopEl.setAttribute('stop-opacity', stop.opacity ?? 1);
                             gradient.appendChild(stopEl);
                         });
                         
+                        // defs에 그라데이션 추가
+                        const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
                         defs.appendChild(gradient);
-                        document.body.appendChild(svg);
+                        svg.appendChild(defs);
                         
-                        // 텍스트에 그라데이션 적용
-                        textElement.style.background = `url(#${gradientId})`;
-                        textElement.style.webkitBackgroundClip = 'text';
-                        textElement.style.backgroundClip = 'text';
-                        textElement.style.webkitTextFillColor = 'transparent';
-                        textElement.style.color = 'transparent';
+                        fillValue = `url(#${gradientId})`;
                     } else {
-                        textElement.style.color = obj.properties.color || '#FFFFFF';
-                        textElement.style.background = 'none';
-                        textElement.style.webkitBackgroundClip = 'none';
-                        textElement.style.backgroundClip = 'none';
-                        textElement.style.webkitTextFillColor = obj.properties.color || '#FFFFFF';
+                        fillValue = obj.properties.color || '#FFFFFF';
                     }
+
+                    // 텍스트 요소 생성
+                    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    text.textContent = obj.properties.content || '';
+                    text.setAttribute('x', '50%');
+                    text.setAttribute('y', '50%');
+                    text.setAttribute('dominant-baseline', 'middle');
+                    text.setAttribute('text-anchor', obj.properties.textAlign === 'left' ? 'start' : 
+                                                   obj.properties.textAlign === 'right' ? 'end' : 'middle');
+                    text.setAttribute('font-family', obj.properties.fontFamily || 'Arial');
+                    text.setAttribute('font-size', `${obj.properties.fontSize || 24}px`);
+                    text.setAttribute('font-weight', obj.properties.fontWeight || 'normal');
+                    text.setAttribute('fill', fillValue);
+                    text.setAttribute('fill-opacity', obj.properties.fillType === 'gradient' ? 1 : (obj.properties.opacity ?? 1));
 
                     // 텍스트 테두리
                     if (obj.properties.useTextBorder) {
-                        textElement.style.webkitTextStroke = `${obj.properties.textBorderWidth || 1}px ${obj.properties.textBorderColor || '#000000'}`;
+                        text.setAttribute('stroke', obj.properties.textBorderColor || '#000000');
+                        text.setAttribute('stroke-width', obj.properties.textBorderWidth || 1);
                     }
 
                     // 텍스트 그림자
@@ -673,10 +659,11 @@
                         const shadowY = obj.properties.textShadowOffsetY || 0;
                         const shadowBlur = obj.properties.textShadowBlur || 0;
                         const shadowColor = obj.properties.textShadowColor || '#000000';
-                        textElement.style.textShadow = `${shadowX}px ${shadowY}px ${shadowBlur}px ${shadowColor}`;
+                        text.style.filter = `drop-shadow(${shadowX}px ${shadowY}px ${shadowBlur}px ${shadowColor})`;
                     }
 
-                    textContainer.appendChild(textElement);
+                    svg.appendChild(text);
+                    textContainer.appendChild(svg);
                     element.appendChild(textContainer);
                     break;
                 }
@@ -823,76 +810,62 @@
                     timerContainer.style.height = '100%';
                     timerContainer.style.boxSizing = 'border-box';
 
-                    // 타이머 요소 생성
-                    const timerElement = document.createElement('div');
-                    timerElement.textContent = '00:00:00'; // 기본 타이머 텍스트
-                    timerElement.style.fontFamily = obj.properties.fontFamily || 'Arial';
-                    timerElement.style.fontSize = `${obj.properties.fontSize || 48}px`;
-                    timerElement.style.fontWeight = obj.properties.fontWeight || 'bold';
-                    timerElement.style.opacity = obj.properties.opacity !== undefined ? obj.properties.opacity : 1;
+                    // SVG 생성
+                    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                    svg.style.width = '100%';
+                    svg.style.height = '100%';
+                    svg.style.overflow = 'visible';
 
                     // 그라데이션 또는 단색 적용
+                    let fillValue;
                     if (obj.properties.fillType === 'gradient' && obj.properties.gradient) {
                         const { angle = 0, stops = [] } = obj.properties.gradient;
-                        
-                        // SVG 네임스페이스
-                        const svgNS = "http://www.w3.org/2000/svg";
-                        
-                        // SVG와 defs 요소 생성
-                        const svg = document.createElementNS(svgNS, "svg");
-                        svg.style.width = "0";
-                        svg.style.height = "0";
-                        svg.style.position = "absolute";
-                        
-                        const defs = document.createElementNS(svgNS, "defs");
-                        svg.appendChild(defs);
                         
                         // 그라데이션 ID 생성
                         const gradientId = `timer-gradient-${obj.id}`;
                         
                         // linearGradient 요소 생성
-                        const gradient = document.createElementNS(svgNS, 'linearGradient');
+                        const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
                         gradient.setAttribute('id', gradientId);
                         
                         // 그라데이션 각도 계산 (90도 보정)
-                        const radians = ((angle - 90) * Math.PI) / 180;
-                        const x1 = 50 + Math.cos(radians) * 50;
-                        const y1 = 50 + Math.sin(radians) * 50;
-                        const x2 = 50 + Math.cos(radians + Math.PI) * 50;
-                        const y2 = 50 + Math.sin(radians + Math.PI) * 50;
-                        
-                        gradient.setAttribute('x1', `${x1}%`);
-                        gradient.setAttribute('y1', `${y1}%`);
-                        gradient.setAttribute('x2', `${x2}%`);
-                        gradient.setAttribute('y2', `${y2}%`);
+                        gradient.setAttribute('gradientTransform', `rotate(${angle - 90}, 0.5, 0.5)`);
                         
                         // 그라데이션 스톱 추가
                         stops.forEach(stop => {
-                            const stopEl = document.createElementNS(svgNS, 'stop');
+                            const stopEl = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
                             stopEl.setAttribute('offset', `${stop.position * 100}%`);
                             stopEl.setAttribute('stop-color', stop.color);
                             stopEl.setAttribute('stop-opacity', stop.opacity ?? 1);
                             gradient.appendChild(stopEl);
                         });
                         
+                        // defs에 그라데이션 추가
+                        const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
                         defs.appendChild(gradient);
-                        document.body.appendChild(svg);
+                        svg.appendChild(defs);
                         
-                        // 타이머에 그라데이션 적용
-                        timerElement.style.background = `url(#${gradientId})`;
-                        timerElement.style.webkitBackgroundClip = 'text';
-                        timerElement.style.backgroundClip = 'text';
-                        timerElement.style.webkitTextFillColor = 'transparent';
-                        timerElement.style.color = 'transparent';
+                        fillValue = `url(#${gradientId})`;
                     } else {
-                        timerElement.style.color = obj.properties.color || '#FFFFFF';
-                        timerElement.style.background = 'none';
-                        timerElement.style.webkitBackgroundClip = 'none';
-                        timerElement.style.backgroundClip = 'none';
-                        timerElement.style.webkitTextFillColor = obj.properties.color || '#FFFFFF';
+                        fillValue = obj.properties.color || '#FFFFFF';
                     }
 
-                    timerContainer.appendChild(timerElement);
+                    // 타이머 텍스트 요소 생성
+                    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    text.textContent = '00:00:00'; // 기본 타이머 텍스트
+                    text.setAttribute('x', '50%');
+                    text.setAttribute('y', '50%');
+                    text.setAttribute('dominant-baseline', 'middle');
+                    text.setAttribute('text-anchor', obj.properties.textAlign === 'left' ? 'start' : 
+                                                   obj.properties.textAlign === 'right' ? 'end' : 'middle');
+                    text.setAttribute('font-family', obj.properties.fontFamily || 'Arial');
+                    text.setAttribute('font-size', `${obj.properties.fontSize || 48}px`);
+                    text.setAttribute('font-weight', obj.properties.fontWeight || 'bold');
+                    text.setAttribute('fill', fillValue);
+                    text.setAttribute('fill-opacity', obj.properties.fillType === 'gradient' ? 1 : (obj.properties.opacity ?? 1));
+
+                    svg.appendChild(text);
+                    timerContainer.appendChild(svg);
                     element.appendChild(timerContainer);
                     break;
                 }
