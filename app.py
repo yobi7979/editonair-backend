@@ -531,13 +531,6 @@ def create_object(scene_id):
     db.session.add(new_object)
     db.session.commit()
 
-    # Emit a real-time update
-    socketio.emit('object_created', {'object': object_to_dict(new_object)}, room=f'scene_{scene_id}')
-    
-    # Also update the whole scene for simplicity on the client
-    updated_scene_data = scene_to_dict(Scene.query.get(scene_id))
-    socketio.emit('scene_updated', {'scene': updated_scene_data}, room=f'project_{scene.project_id}')
-
     return jsonify(object_to_dict(new_object)), 201
 
 @app.route('/api/objects/<int:object_id>', methods=['PUT'])
@@ -574,13 +567,6 @@ def update_object(object_id):
     try:
         db.session.commit()
         print("Successfully updated object in database")
-        
-        # 웹소켓으로 object_update 이벤트 전송
-        socketio.emit('object_update', {
-            'object_id': obj.id,
-            'object': object_to_dict(obj)
-        })
-        
         return jsonify(object_to_dict(obj))
     except Exception as e:
         print(f"Error updating object: {str(e)}")
@@ -657,21 +643,13 @@ def handle_disconnect():
 def handle_join_project(data):
     project_name = data.get('project_name')
     if project_name:
-        emit('project_update', project_to_dict(get_project_by_name(project_name)))
+        print(f'Client joined project: {project_name}')
 
 @socketio.on('join_scene')
 def handle_join_scene(data):
     scene_id = data.get('scene_id')
     if scene_id:
-        emit('scene_update', scene_to_dict(Scene.query.get(scene_id)))
-
-@socketio.on('scene_update')
-def handle_scene_update(data):
-    scene_id = data.get('scene_id')
-    if scene_id:
-        scene = Scene.query.get(scene_id)
-        if scene:
-            emit('scene_update', scene_to_dict(scene))
+        print(f'Client joined scene: {scene_id}')
 
 @socketio.on('scene_change')
 def handle_scene_change(data):
