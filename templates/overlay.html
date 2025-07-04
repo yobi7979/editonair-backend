@@ -643,17 +643,17 @@
                         const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
                         gradient.setAttribute('id', gradientId);
                         
-                        // 그라데이션 각도 계산 (90도 보정)
-                        gradient.setAttribute('gradientTransform', `rotate(${angle - 90}, 0.5, 0.5)`);
+                        // 그라데이션 각도 계산 (180도 보정)
+                        const radians = ((angle - 180) * Math.PI / 180);
+                        const x1 = 50 + Math.cos(radians) * 50;
+                        const y1 = 50 + Math.sin(radians) * 50;
+                        const x2 = 50 + Math.cos(radians + Math.PI) * 50;
+                        const y2 = 50 + Math.sin(radians + Math.PI) * 50;
                         
-                        // 그라데이션 스톱 추가
-                        stops.forEach(stop => {
-                            const stopEl = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
-                            stopEl.setAttribute('offset', `${stop.position * 100}%`);
-                            stopEl.setAttribute('stop-color', stop.color);
-                            stopEl.setAttribute('stop-opacity', stop.opacity ?? 1);
-                            gradient.appendChild(stopEl);
-                        });
+                        gradient.setAttribute('x1', `${x1}%`);
+                        gradient.setAttribute('y1', `${y1}%`);
+                        gradient.setAttribute('x2', `${x2}%`);
+                        gradient.setAttribute('y2', `${y2}%`);
                         
                         // defs에 그라데이션 추가
                         const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
@@ -860,8 +860,17 @@
                         const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
                         gradient.setAttribute('id', gradientId);
                         
-                        // 그라데이션 각도 계산 (90도 보정)
-                        gradient.setAttribute('gradientTransform', `rotate(${angle - 90}, 0.5, 0.5)`);
+                        // 그라데이션 각도 계산 (180도 보정)
+                        const radians = ((angle - 180) * Math.PI / 180);
+                        const x1 = 50 + Math.cos(radians) * 50;
+                        const y1 = 50 + Math.sin(radians) * 50;
+                        const x2 = 50 + Math.cos(radians + Math.PI) * 50;
+                        const y2 = 50 + Math.sin(radians + Math.PI) * 50;
+                        
+                        gradient.setAttribute('x1', `${x1}%`);
+                        gradient.setAttribute('y1', `${y1}%`);
+                        gradient.setAttribute('x2', `${x2}%`);
+                        gradient.setAttribute('y2', `${y2}%`);
                         
                         // 그라데이션 스톱 추가
                         stops.forEach(stop => {
@@ -884,7 +893,7 @@
 
                     // 타이머 텍스트 요소 생성
                     const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                    text.textContent = '00:00:00'; // 기본 타이머 텍스트
+                    text.textContent = obj.properties.content || '00:00';
                     text.setAttribute('x', '50%');
                     text.setAttribute('y', '50%');
                     text.setAttribute('dominant-baseline', 'middle');
