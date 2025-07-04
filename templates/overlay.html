@@ -655,6 +655,15 @@
                         gradient.setAttribute('x2', `${x2}%`);
                         gradient.setAttribute('y2', `${y2}%`);
                         
+                        // 그라데이션 스톱 추가
+                        stops.forEach(stop => {
+                            const stopEl = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+                            stopEl.setAttribute('offset', `${stop.position * 100}%`);
+                            stopEl.setAttribute('stop-color', stop.color);
+                            stopEl.setAttribute('stop-opacity', stop.opacity ?? 1);
+                            gradient.appendChild(stopEl);
+                        });
+                        
                         // defs에 그라데이션 추가
                         const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
                         defs.appendChild(gradient);
