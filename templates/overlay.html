@@ -643,12 +643,12 @@
                         const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
                         gradient.setAttribute('id', gradientId);
                         
-                        // 그라데이션 각도 계산 (180도 보정)
-                        const radians = ((angle - 180) * Math.PI / 180);
-                        const x1 = 50 + Math.cos(radians) * 50;
-                        const y1 = 50 + Math.sin(radians) * 50;
-                        const x2 = 50 + Math.cos(radians + Math.PI) * 50;
-                        const y2 = 50 + Math.sin(radians + Math.PI) * 50;
+                        // 그라데이션 각도 계산 (0도는 왼쪽에서 오른쪽)
+                        const radians = (angle * Math.PI / 180);
+                        const x1 = 50 - Math.cos(radians) * 50;
+                        const y1 = 50 - Math.sin(radians) * 50;
+                        const x2 = 50 + Math.cos(radians) * 50;
+                        const y2 = 50 + Math.sin(radians) * 50;
                         
                         gradient.setAttribute('x1', `${x1}%`);
                         gradient.setAttribute('y1', `${y1}%`);
@@ -752,13 +752,13 @@
                         const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
                         gradient.setAttribute('id', gradientId);
                         
-                        // 그라데이션 각도 설정
+                        // 그라데이션 각도 설정 (0도는 왼쪽에서 오른쪽)
                         const angle = obj.properties.gradient.angle || 0;
-                        const radians = (angle - 90) * (Math.PI / 180);
-                        const x1 = 50 + Math.cos(radians) * 50;
-                        const y1 = 50 + Math.sin(radians) * 50;
-                        const x2 = 50 + Math.cos(radians + Math.PI) * 50;
-                        const y2 = 50 + Math.sin(radians + Math.PI) * 50;
+                        const radians = angle * (Math.PI / 180);
+                        const x1 = 50 - Math.cos(radians) * 50;
+                        const y1 = 50 - Math.sin(radians) * 50;
+                        const x2 = 50 + Math.cos(radians) * 50;
+                        const y2 = 50 + Math.sin(radians) * 50;
                         
                         gradient.setAttribute('x1', `${x1}%`);
                         gradient.setAttribute('y1', `${y1}%`);
@@ -869,12 +869,12 @@
                         const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
                         gradient.setAttribute('id', gradientId);
                         
-                        // 그라데이션 각도 계산 (180도 보정)
-                        const radians = ((angle - 180) * Math.PI / 180);
-                        const x1 = 50 + Math.cos(radians) * 50;
-                        const y1 = 50 + Math.sin(radians) * 50;
-                        const x2 = 50 + Math.cos(radians + Math.PI) * 50;
-                        const y2 = 50 + Math.sin(radians + Math.PI) * 50;
+                        // 그라데이션 각도 계산 (0도는 왼쪽에서 오른쪽)
+                        const radians = angle * Math.PI / 180;
+                        const x1 = 50 - Math.cos(radians) * 50;
+                        const y1 = 50 - Math.sin(radians) * 50;
+                        const x2 = 50 + Math.cos(radians) * 50;
+                        const y2 = 50 + Math.sin(radians) * 50;
                         
                         gradient.setAttribute('x1', `${x1}%`);
                         gradient.setAttribute('y1', `${y1}%`);
