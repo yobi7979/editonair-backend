@@ -13,6 +13,7 @@ from PIL import Image
 import socket
 import re
 import shutil
+import io
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -699,35 +700,108 @@ def get_dummy_scene():
     }
     return jsonify(dummy_scene)
 
+def create_thumbnail(image_path, thumb_path, size=(150, 150)):
+    """이미지 썸네일 생성"""
+    try:
+        with Image.open(image_path) as img:
+            # 이미지를 RGB 모드로 변환 (알파 채널이 있는 경우 처리)
+            if img.mode in ('RGBA', 'LA'):
+                background = Image.new('RGB', img.size, (255, 255, 255))
+                background.paste(img, mask=img.split()[-1])
+                img = background
+            elif img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            # 썸네일 생성
+            img.thumbnail(size, Image.Resampling.LANCZOS)
+            
+            # WebP 형식으로 저장
+            img.save(thumb_path, 'WEBP', quality=85, method=6)
+            return True
+    except Exception as e:
+        print(f"썸네일 생성 실패: {e}")
+        return False
+
+def create_sequence_thumbnail(sprite_path, thumb_path, frame_width, size=(150, 150)):
+    """시퀀스 스프라이트에서 첫 프레임 썸네일 생성"""
+    try:
+        with Image.open(sprite_path) as img:
+            # 첫 프레임 추출
+            first_frame = img.crop((0, 0, frame_width, img.size[1]))
+            
+            # RGB 모드로 변환
+            if first_frame.mode in ('RGBA', 'LA'):
+                background = Image.new('RGB', first_frame.size, (255, 255, 255))
+                background.paste(first_frame, mask=first_frame.split()[-1])
+                first_frame = background
+            elif first_frame.mode != 'RGB':
+                first_frame = first_frame.convert('RGB')
+            
+            # 썸네일 생성
+            first_frame.thumbnail(size, Image.Resampling.LANCZOS)
+            
+            # WebP 형식으로 저장
+            first_frame.save(thumb_path, 'WEBP', quality=85, method=6)
+            return True
+    except Exception as e:
+        print(f"시퀀스 썸네일 생성 실패: {e}")
+        return False
+
+def get_thumbnail_path(project_name, filename):
+    """썸네일 파일 경로 생성"""
+    project_folder = get_project_folder(project_name)
+    thumb_dir = os.path.join(project_folder, 'library', 'thumbnails')
+    os.makedirs(thumb_dir, exist_ok=True)
+    return os.path.join(thumb_dir, f"{os.path.splitext(filename)[0]}.webp")
+
+def get_sequence_thumbnail_path(project_name, sequence_name):
+    """시퀀스 썸네일 파일 경로 생성"""
+    project_folder = get_project_folder(project_name)
+    thumb_dir = os.path.join(project_folder, 'library', 'sequence_thumbnails')
+    os.makedirs(thumb_dir, exist_ok=True)
+    return os.path.join(thumb_dir, f"{sequence_name}.webp")
+
 @app.route('/api/projects/<project_name>/upload/image', methods=['POST'])
 def upload_image(project_name):
-    project = get_project_by_name(project_name)
-    if not project:
-        return jsonify({'error': 'Project not found'}), 404
-    # 단일/다중 이미지 업로드 지원
-    if 'files' not in request.files:
-        return jsonify({'error': 'No files part'}), 400
-    files = request.files.getlist('files')
-    overwrite = request.form.get('overwrite', 'false').lower() == 'true'
-    project_folder = get_project_folder(project_name)
-    images_path = os.path.join(project_folder, 'library', 'images')
-    os.makedirs(images_path, exist_ok=True)
-    saved_files = []
-    exists_files = []
-    for file in files:
-        if file and allowed_image_file(file.filename):
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': '파일이 없습니다.'}), 400
+        
+        files = request.files.getlist('file')
+        overwrite = request.form.get('overwrite', 'false').lower() == 'true'
+        
+        project_folder = get_project_folder(project_name)
+        images_path = os.path.join(project_folder, 'library', 'images')
+        os.makedirs(images_path, exist_ok=True)
+        
+        uploaded_files = []
+        for file in files:
+            if not file or not allowed_image_file(file.filename):
+                continue
+                
+            if not check_file_size(file):
+                return jsonify({'error': f'파일이 너무 큽니다: {file.filename}'}), 400
+                
             filename = safe_unicode_filename(file.filename)
-            if not filename:
+            file_path = os.path.join(images_path, filename)
+            
+            if os.path.exists(file_path) and not overwrite:
                 continue
-            save_path = os.path.join(images_path, filename)
-            if os.path.exists(save_path) and not overwrite:
-                exists_files.append(filename)
-                continue
-            file.save(save_path)
-            saved_files.append(filename)
-    if exists_files and not overwrite:
-        return jsonify({'exists': exists_files, 'uploaded': saved_files}), 409
-    return jsonify({'uploaded': saved_files}), 200
+                
+            file.save(file_path)
+            
+            # 썸네일 생성
+            thumb_path = get_thumbnail_path(project_name, filename)
+            create_thumbnail(file_path, thumb_path)
+            
+            uploaded_files.append(filename)
+            
+        return jsonify({
+            'message': '이미지가 업로드되었습니다.',
+            'files': uploaded_files
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 def create_sprite_sheet(image_files, output_path):
     '''여러 이미지를 세로 1줄 sprite sheet로 합치고 저장'''
@@ -860,114 +934,42 @@ def process_sequence_images(image_files, output_dir, sequence_name, options=None
 
 @app.route('/api/projects/<project_name>/upload/sequence', methods=['POST'])
 def upload_sequence(project_name):
-    import time
-    start_time = time.time()
-    print(f"Starting sequence upload for project: {project_name}")
-
-    project = get_project_by_name(project_name)
-    if not project:
-        return jsonify({'error': 'Project not found'}), 404
-
-    sequence_name = request.form.get('sequence_name', 'sequence')
-
-    # 프론트엔드에서 sprite/meta만 업로드하는 경우 지원
-    sprite = request.files.get('sprite')
-    meta = request.files.get('meta')
-    if sprite and meta:
-        project_folder = get_project_folder(project_name)
-        sequence_path = os.path.join(project_folder, 'library', 'sequences', safe_unicode_filename(sequence_name))
-        os.makedirs(sequence_path, exist_ok=True)
-        sprite_path = os.path.join(sequence_path, 'sprite.png')
-        meta_path = os.path.join(sequence_path, 'meta.json')
-        sprite.save(sprite_path)
-        meta.save(meta_path)
-        elapsed_time = time.time() - start_time
-        print(f"Sprite/meta upload completed in {elapsed_time:.2f} seconds")
-        return jsonify({
-            'uploaded': ['sprite.png', 'meta.json'],
-            'sequence': sequence_name,
-            'processing_time': f'{elapsed_time:.2f}s'
-        }), 200
-
-    # 기존 방식 (files로 여러 이미지 업로드)
-    files = request.files.getlist('files')
-    if not files:
-        return jsonify({'error': 'No files part, or no sprite/meta part'}), 400
-
-    print(f"Received {len(files)} files for sequence '{sequence_name}'")
-    
-    # 변환 옵션 파싱
-    format = request.form.get('format', 'PNG')
-    quality = int(request.form.get('quality', 95))
-    create_sprite = request.form.get('create_sprite', 'true').lower() == 'true'
-    
-    project_folder = get_project_folder(project_name)
-    sequence_path = os.path.join(project_folder, 'library', 'sequences', safe_unicode_filename(sequence_name))
-    os.makedirs(sequence_path, exist_ok=True)
-    
-    # 임시 파일 저장
-    temp_files = []
-    overwrite = request.form.get('overwrite', 'false').lower() == 'true'
-    
-    print("Saving temporary files...")
-    for i, file in enumerate(files):
-        if file and allowed_image_file(file.filename):
-            # 파일 크기 체크
-            if not check_file_size(file):
-                return jsonify({'error': f'File {file.filename} is too large (max 50MB)'}), 400
-            
-            filename = safe_unicode_filename(file.filename)
-            if not filename:
-                continue
-            temp_path = os.path.join(sequence_path, f"temp_{filename}")
-            file.save(temp_path)
-            temp_files.append(temp_path)
-            print(f"Saved temp file {i+1}/{len(files)}: {filename}")
-    
-    if not temp_files:
-        return jsonify({'error': 'No valid images uploaded'}), 400
-    
-    print(f"Saved {len(temp_files)} temporary files")
-    
-    # 파일명으로 정렬 (숫자 순서)
-    temp_files.sort(key=lambda x: os.path.basename(x))
-    
-    # 시퀀스 처리
-    options = {
-        'format': format,
-        'quality': quality,
-        'create_sprite': create_sprite
-    }
-    
     try:
-        processed_files, sprite_path, meta = process_sequence_images(temp_files, sequence_path, sequence_name, options)
+        if 'sprite' not in request.files or 'meta' not in request.files:
+            return jsonify({'error': '스프라이트와 메타 파일이 필요합니다.'}), 400
+
+        sprite_file = request.files['sprite']
+        meta_file = request.files['meta']
+        sequence_name = request.form.get('sequence_name', '')
+
+        if not sequence_name:
+            return jsonify({'error': '시퀀스 이름이 필요합니다.'}), 400
+
+        project_folder = get_project_folder(project_name)
+        sequence_folder = os.path.join(project_folder, 'library', 'sequences', sequence_name)
+        os.makedirs(sequence_folder, exist_ok=True)
+
+        # 스프라이트와 메타 파일 저장
+        sprite_path = os.path.join(sequence_folder, 'sprite.png')
+        meta_path = os.path.join(sequence_folder, 'meta.json')
         
-        # 임시 파일 삭제
-        print("Cleaning up temporary files...")
-        for temp_file in temp_files:
-            if os.path.exists(temp_file):
-                os.remove(temp_file)
-        
-        elapsed_time = time.time() - start_time
-        print(f"Sequence upload completed in {elapsed_time:.2f} seconds")
-        
+        sprite_file.save(sprite_path)
+        meta_file.save(meta_path)
+
+        # 메타 데이터 읽기
+        with open(meta_path, 'r') as f:
+            meta_data = json.load(f)
+
+        # 썸네일 생성
+        thumb_path = get_sequence_thumbnail_path(project_name, sequence_name)
+        create_sequence_thumbnail(sprite_path, thumb_path, meta_data.get('frame_width', 150))
+
         return jsonify({
-            'uploaded': processed_files + (['sprite.png'] if sprite_path else []),
-            'sequence': sequence_name, 
-            'meta': meta,
-            'processing_time': f"{elapsed_time:.2f}s"
-        }), 200
-        
+            'message': '시퀀스가 업로드되었습니다.',
+            'sequence_name': sequence_name
+        })
     except Exception as e:
-        print(f"Error during sequence processing: {e}")
-        # 임시 파일 정리
-        for temp_file in temp_files:
-            if os.path.exists(temp_file):
-                try:
-                    os.remove(temp_file)
-                except:
-                    pass
-        return jsonify({'error': f'Processing failed: {str(e)}'}), 500
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/projects/<project_name>/library/images', methods=['GET'])
 def list_project_images(project_name):
