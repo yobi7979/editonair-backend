@@ -21,9 +21,14 @@ app = Flask(__name__)
 # CORS 미들웨어 추가
 @app.after_request
 def after_request(response):
-    response.headers['Access-Control-Allow-Origin'] = 'http://localhost:5173'
+    # 개발 환경과 프로덕션 환경 모두 허용
+    allowed_origins = ['http://localhost:5173', 'https://editonair-frontend.vercel.app']
+    origin = request.headers.get('Origin')
+    if origin in allowed_origins:
+        response.headers['Access-Control-Allow-Origin'] = origin
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
     response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
+    response.headers['Access-Control-Allow-Credentials'] = 'true'
     return response
 
 # (Flask-CORS import/use 흔적이 있다면 아래처럼 주석 처리)
@@ -945,8 +950,17 @@ def upload_sequence(project_name):
         if not sequence_name:
             return jsonify({'error': '시퀀스 이름이 필요합니다.'}), 400
 
+        # 파일 크기 체크
+        if not check_file_size(sprite_file) or not check_file_size(meta_file):
+            return jsonify({'error': '파일이 너무 큽니다 (최대 50MB).'}), 400
+
         project_folder = get_project_folder(project_name)
         sequence_folder = os.path.join(project_folder, 'library', 'sequences', sequence_name)
+        
+        # 폴더가 이미 존재하면 삭제
+        if os.path.exists(sequence_folder):
+            shutil.rmtree(sequence_folder)
+        
         os.makedirs(sequence_folder, exist_ok=True)
 
         # 스프라이트와 메타 파일 저장
@@ -957,18 +971,27 @@ def upload_sequence(project_name):
         meta_file.save(meta_path)
 
         # 메타 데이터 읽기
-        with open(meta_path, 'r') as f:
-            meta_data = json.load(f)
+        try:
+            with open(meta_path, 'r', encoding='utf-8') as f:
+                meta_data = json.load(f)
+        except Exception as e:
+            return jsonify({'error': f'메타 파일 읽기 실패: {str(e)}'}), 400
 
         # 썸네일 생성
-        thumb_path = get_sequence_thumbnail_path(project_name, sequence_name)
-        create_sequence_thumbnail(sprite_path, thumb_path, meta_data.get('frame_width', 150))
+        try:
+            thumb_path = get_sequence_thumbnail_path(project_name, sequence_name)
+            create_sequence_thumbnail(sprite_path, thumb_path, meta_data.get('frame_width', 150))
+        except Exception as e:
+            print(f"썸네일 생성 실패: {e}")
+            # 썸네일 생성 실패는 치명적이지 않으므로 계속 진행
 
         return jsonify({
             'message': '시퀀스가 업로드되었습니다.',
-            'sequence_name': sequence_name
+            'sequence_name': sequence_name,
+            'meta': meta_data
         })
     except Exception as e:
+        print(f"시퀀스 업로드 실패: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/projects/<project_name>/library/images', methods=['GET'])
@@ -1083,7 +1106,7 @@ def preload_project(project_name):
                 'name': project.name
             },
             'scenes': scene_data,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': datetime.datetime.now().isoformat()
         }
         
         return jsonify(preload_data)
