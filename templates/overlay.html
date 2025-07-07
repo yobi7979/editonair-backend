@@ -451,7 +451,11 @@
         }
 
         // 전역 변수 및 초기화
-        const socket = io();
+        const socket = io({
+            query: {
+                project_id: {{ project.id }}
+            }
+        });
         const container = document.getElementById('overlay-container');
         const motionManager = new MotionManager(container);
         let currentScene = null; // 초기에는 null로 설정
@@ -461,6 +465,7 @@
         // === WebSocket 연결 상태 디버깅 ===
         console.log('🔌 Initializing WebSocket connection...');
         console.log('Socket.IO version:', io.version);
+        console.log('Project ID:', {{ project.id }});
         
         // 연결 상태 체크 함수
         function checkConnectionStatus() {

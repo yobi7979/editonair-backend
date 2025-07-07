@@ -422,23 +422,35 @@ def default_error_handler(e):
 @socketio.on('connect')
 def handle_connect():
     """WebSocket 연결 처리"""
+    print(f"WebSocket connection attempt from {request.remote_addr}")
+    print(f"Query parameters: {request.args}")
+    
     token = request.args.get('token')
+    project_id = request.args.get('project_id')
     
     # 토큰이 없는 경우 (오버레이 페이지) - project_id로 룸 조인
     if not token:
-        project_id = request.args.get('project_id')
+        print(f"No token provided, checking project_id: {project_id}")
         if project_id:
-            join_room(f'project_{project_id}')
+            room = f'project_{project_id}'
+            join_room(room)
+            print(f"Overlay page joined room: {room}")
             return True
-        return False
+        else:
+            print("No project_id provided, allowing connection anyway for debugging")
+            return True  # 디버깅을 위해 일단 허용
         
     # 토큰이 있는 경우 (프론트엔드 앱) - 사용자 인증
+    print(f"Token provided: {token[:20]}...")
     try:
         decoded = decode_token(token)
         user_id = decoded['sub']
-        join_room(f'user_{user_id}')
+        room = f'user_{user_id}'
+        join_room(room)
+        print(f"Authenticated user {user_id} joined room: {room}")
         return True
-    except:
+    except Exception as e:
+        print(f"Token validation failed: {e}")
         disconnect()
         return False
 
