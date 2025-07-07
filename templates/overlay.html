@@ -453,7 +453,8 @@
         // 전역 변수 및 초기화
         const socket = io({
             query: {
-                project_id: {{ project.id }}
+                project_id: {{ project.id }},
+                user_id: {{ user_id }}
             }
         });
         const container = document.getElementById('overlay-container');
@@ -466,6 +467,7 @@
         console.log('🔌 Initializing WebSocket connection...');
         console.log('Socket.IO version:', io.version);
         console.log('Project ID:', {{ project.id }});
+        console.log('User ID:', {{ user_id }});
         
         // 연결 상태 체크 함수
         function checkConnectionStatus() {
@@ -474,6 +476,7 @@
             console.log('  - Socket ID:', socket.id);
             console.log('  - Transport:', socket.io.engine?.transport?.name);
             console.log('  - Ready State:', socket.io.engine?.readyState);
+            console.log('  - User Room: user_{{ user_id }}');
             return socket.connected;
         }
 
@@ -522,14 +525,10 @@
             console.log('Transport:', socket.io.engine.transport.name);
             
             const projectId = {{ project.id }};
-            {% if scene %}
-            const sceneId = {{ scene.id }};
-            console.log('🏠 Joining scene room:', sceneId);
-            socket.emit('join_scene', { scene_id: sceneId });
-            {% else %}
-            console.log('🏠 Joining project room:', projectId);
-            socket.emit('join_project', { project_id: projectId });
-            {% endif %}
+            const userId = {{ user_id }};
+            console.log('🏠 Joining user room: user_' + userId);
+            // 사용자별 룸에 자동으로 조인 (백엔드에서 처리)
+            console.log('🎯 Connected to user-specific overlay room');
         });
 
         socket.on('disconnect', (reason) => {

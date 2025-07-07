@@ -60,7 +60,7 @@ try:
     # Initialize extensions
     db = SQLAlchemy(app)
     jwt = JWTManager(app)
-    socketio = SocketIO(app, async_mode='gevent', cors_allowed_origins="*")
+    socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent', allow_unsafe_werkzeug=True)
 
     print("Database and extensions initialized successfully")
 
@@ -68,15 +68,26 @@ except Exception as e:
     print(f"Error during initialization: {e}")
     raise
 
-# Global variable for tracking pushed scene
-current_pushed_scene_id = None
+# 전역 변수들
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent', allow_unsafe_werkzeug=True)
 
-ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+# 사용자별 송출 상태 관리 (메모리 기반)
+user_broadcast_state = {}
 
-# 파일 크기 제한 (50MB)
-MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
-# 업로드 타임아웃 (5분)
-UPLOAD_TIMEOUT = 300  # 5분
+def get_user_broadcast_state(user_id):
+    """사용자별 송출 상태 가져오기"""
+    if user_id not in user_broadcast_state:
+        user_broadcast_state[user_id] = {
+            'current_pushed_scene_id': None,
+            'is_broadcasting': False
+        }
+    return user_broadcast_state[user_id]
+
+def set_user_pushed_scene(user_id, scene_id):
+    """사용자별 송출 씬 설정"""
+    state = get_user_broadcast_state(user_id)
+    state['current_pushed_scene_id'] = scene_id
+    state['is_broadcasting'] = True if scene_id else False
 
 # --- Database Models ---
 
@@ -178,11 +189,17 @@ def slugify(name):
     name = re.sub(r'-+', '-', name)
     return name.strip('-') or 'untitled'
 
-def get_project_folder(project_name):
-    """프로젝트명으로 폴더 생성 및 경로 반환"""
+def get_project_folder(project_name, user_id=None):
+    """프로젝트명으로 폴더 생성 및 경로 반환 (사용자별 격리)"""
     basedir = os.path.abspath(os.path.dirname(__file__))
     folder = slugify(project_name)
-    return os.path.join(basedir, '..', 'projects', folder)
+    
+    if user_id:
+        # 사용자별 폴더 구조: projects/user_{user_id}/{project_name}
+        return os.path.join(basedir, '..', 'projects', f'user_{user_id}', folder)
+    else:
+        # 하위 호환성을 위해 user_id가 없으면 기존 방식 사용
+        return os.path.join(basedir, '..', 'projects', folder)
 
 def get_current_user_from_token():
     """현재 인증된 사용자를 반환하는 헬퍼 함수"""
@@ -192,9 +209,19 @@ def get_current_user_from_token():
     except:
         return None
 
-def get_project_by_name(project_name):
-    """프로젝트 이름으로 프로젝트를 찾는 헬퍼 함수"""
-    return Project.query.filter_by(name=project_name).first()
+def get_project_by_name(project_name, user_id=None):
+    """프로젝트 이름으로 프로젝트를 찾는 헬퍼 함수 (사용자별 격리)"""
+    if user_id:
+        # 사용자가 접근 가능한 프로젝트 중에서 검색
+        permissions = ProjectPermission.query.filter_by(user_id=user_id).all()
+        project_ids = [p.project_id for p in permissions]
+        return Project.query.filter(
+            Project.id.in_(project_ids),
+            Project.name == project_name
+        ).first()
+    else:
+        # 하위 호환성을 위해 user_id가 없으면 기존 방식 사용
+        return Project.query.filter_by(name=project_name).first()
 
 def check_project_permission(user_id, project_id, required_permission):
     """사용자의 프로젝트 권한을 확인하는 헬퍼 함수"""
@@ -295,7 +322,7 @@ def auth_required(permission='viewer'):
             # project_name이 URL에 있는 경우
             project_name = kwargs.get('project_name')
             if project_name:
-                project = get_project_by_name(project_name)
+                project = get_project_by_name(project_name, current_user.id)
                 if not project:
                     return jsonify({'error': 'Project not found'}), 404
                     
@@ -427,27 +454,33 @@ def handle_connect():
     
     token = request.args.get('token')
     project_id = request.args.get('project_id')
+    user_id = request.args.get('user_id')
     
-    # 토큰이 없는 경우 (오버레이 페이지) - project_id로 룸 조인
+    # 토큰이 없는 경우 (오버레이 페이지) - user_id로 사용자별 룸 조인
     if not token:
-        print(f"No token provided, checking project_id: {project_id}")
-        if project_id:
-            room = f'project_{project_id}'
-            join_room(room)
-            print(f"Overlay page joined room: {room}")
-            return True
+        print(f"No token provided, checking user_id: {user_id}")
+        if user_id:
+            try:
+                user_id = int(user_id)
+                user_room = f'user_{user_id}'
+                join_room(user_room)
+                print(f"Overlay page joined user room: {user_room}")
+                return True
+            except ValueError:
+                print("Invalid user_id format")
+                return False
         else:
-            print("No project_id provided, allowing connection anyway for debugging")
-            return True  # 디버깅을 위해 일단 허용
+            print("No user_id provided for overlay page")
+            return False
         
     # 토큰이 있는 경우 (프론트엔드 앱) - 사용자 인증
     print(f"Token provided: {token[:20]}...")
     try:
         decoded = decode_token(token)
         user_id = decoded['sub']
-        room = f'user_{user_id}'
-        join_room(room)
-        print(f"Authenticated user {user_id} joined room: {room}")
+        user_room = f'user_{user_id}'
+        join_room(user_room)
+        print(f"Authenticated user {user_id} joined room: {user_room}")
         return True
     except Exception as e:
         print(f"Token validation failed: {e}")
@@ -467,7 +500,7 @@ def handle_join(data):
         emit('error', {'message': 'Project name is required'})
         return
         
-    project = Project.query.filter_by(name=project_name).first()
+    project = get_project_by_name(project_name, session.get('user_id'))
     if not project:
         emit('error', {'message': 'Project not found'})
         return
@@ -588,7 +621,7 @@ def create_project():
         db.session.commit()
         
         # 프로젝트 폴더 생성
-        project_folder = get_project_folder(project.name)
+        project_folder = get_project_folder(project.name, user_id)
         os.makedirs(os.path.join(project_folder, 'library', 'images'), exist_ok=True)
         os.makedirs(os.path.join(project_folder, 'library', 'sequences'), exist_ok=True)
         
@@ -667,7 +700,7 @@ def handle_projects():
             db.session.commit()
             
             # 프로젝트 폴더 생성
-            project_folder = get_project_folder(new_project_name)
+            project_folder = get_project_folder(new_project_name, current_user.id)
             os.makedirs(os.path.join(project_folder, 'library', 'images'), exist_ok=True)
             os.makedirs(os.path.join(project_folder, 'library', 'sequences'), exist_ok=True)
             
@@ -695,9 +728,11 @@ def handle_projects():
 @auth_required('viewer')
 def handle_project_detail(project_name):
     current_user = get_current_user_from_token()
-    project = get_project_by_name(project_name)
+    project = get_project_by_name(project_name, current_user.id)
     
     # 프로젝트 접근 권한 확인
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
     if not check_project_permission(current_user.id, project.id, 'viewer'):
         return jsonify({'error': 'Permission denied'}), 403
 
@@ -721,7 +756,7 @@ def handle_project_detail(project_name):
             return jsonify({'error': 'Permission denied'}), 403
             
         # 프로젝트 폴더 삭제
-        project_folder = get_project_folder(project.name)
+        project_folder = get_project_folder(project.name, current_user.id)
         if os.path.exists(project_folder):
             shutil.rmtree(project_folder)
             
@@ -733,7 +768,7 @@ def handle_project_detail(project_name):
 @auth_required('owner')
 def handle_project_share(project_name):
     current_user = get_current_user_from_token()
-    project = get_project_by_name(project_name)
+    project = get_project_by_name(project_name, current_user.id)
     
     data = request.get_json()
     if not all(k in data for k in ('username', 'permission_type')):
@@ -772,7 +807,7 @@ def handle_project_share(project_name):
 @auth_required('editor')
 def create_scene(project_name):
     current_user = get_current_user_from_token()
-    project = get_project_by_name(project_name)
+    project = get_project_by_name(project_name, current_user.id)
     data = request.get_json()
     if not data or 'name' not in data:
         return jsonify({'error': 'Scene name is required'}), 400
@@ -879,14 +914,35 @@ def delete_scene(scene_id):
 def overlay_project(project_name):
     try:
         print(f"Accessing overlay for project {project_name}")
-        project = get_project_by_name(project_name)
+        
+        # URL 파라미터에서 사용자 ID 가져오기
+        user_id = request.args.get('user_id')
+        if not user_id:
+            return "user_id parameter is required", 400
+            
+        try:
+            user_id = int(user_id)
+        except ValueError:
+            return "Invalid user_id parameter", 400
+        
+        # 사용자 존재 확인
+        user = User.query.get(user_id)
+        if not user:
+            return "User not found", 404
+            
+        # 프로젝트 조회 (사용자별)
+        project = get_project_by_name(project_name, user_id)
+        if not project:
+            return "Project not found", 404
         print(f"Found project: {project.name}")
         
-        # 현재 푸시된 씬이 있으면 해당 씬을 사용, 없으면 첫 번째 씬 사용
+        # 사용자별 송출 상태 확인
+        user_state = get_user_broadcast_state(user_id)
         scene = None
-        if current_pushed_scene_id:
-            print(f"Looking for pushed scene: {current_pushed_scene_id}")
-            scene = Scene.query.get(current_pushed_scene_id)
+        
+        if user_state['current_pushed_scene_id']:
+            print(f"Looking for pushed scene: {user_state['current_pushed_scene_id']}")
+            scene = Scene.query.get(user_state['current_pushed_scene_id'])
             if scene:
                 print(f"Found pushed scene: {scene.name}")
         
@@ -901,7 +957,8 @@ def overlay_project(project_name):
                              project=project, 
                              scene=scene_to_dict(scene) if scene else None,
                              canvas_width=1920,
-                             canvas_height=1080)
+                             canvas_height=1080,
+                             user_id=user_id)  # 사용자 ID를 템플릿에 전달
     except Exception as e:
         print(f"Error in overlay_project: {str(e)}")
         import traceback
@@ -910,7 +967,10 @@ def overlay_project(project_name):
 
 @app.route('/overlay/project/<project_name>/scene/<int:scene_id>')
 def overlay_scene(project_name, scene_id):
-    project = get_project_by_name(project_name)
+    # 오버레이 페이지는 인증 없이 접근 가능하므로 기존 방식 사용
+    project = get_project_by_name(project_name, session.get('user_id'))
+    if not project:
+        return "Project not found", 404
     scene = Scene.query.get_or_404(scene_id)
     return render_template('overlay.html', 
                          project=project, 
@@ -933,15 +993,16 @@ def push_scene(scene_id):
         if not check_project_permission(current_user.id, scene.project_id, 'editor'):
             return jsonify({'error': 'Permission denied'}), 403
         
-        current_pushed_scene_id = scene_id
+        set_user_pushed_scene(current_user.id, scene_id)
         print(f"Scene {scene_id} pushed successfully")
-        # broadcast 옵션 없이 emit
+        # 사용자별 룸으로 브로드캐스트
+        user_room = f'user_{current_user.id}'
         socketio.emit('scene_change', {
             'scene_id': scene_id,
             'transition': 'fade',
             'duration': 1.0,
             'clear_effects': True
-        })
+        }, room=user_room)
         return jsonify({'status': 'success', 'scene_id': scene_id})
     except Exception as e:
         print(f"Error in push_scene: {str(e)}")
@@ -961,13 +1022,16 @@ def out_scene(scene_id):
         if not check_project_permission(current_user.id, scene.project_id, 'editor'):
             return jsonify({'error': 'Permission denied'}), 403
         
+        # 사용자 송출 상태 초기화
+        set_user_pushed_scene(current_user.id, None)
         print(f"Scene {scene_id} out successfully")
-        # broadcast 옵션 없이 emit
+        # 사용자별 룸으로 브로드캐스트
+        user_room = f'user_{current_user.id}'
         socketio.emit('scene_out', {
             'scene_id': scene_id,
             'transition': 'fade',
             'duration': 1.0
-        })
+        }, room=user_room)
         return jsonify({'status': 'success', 'scene_id': scene_id})
     except Exception as e:
         print(f"Error in out_scene: {str(e)}")
@@ -1229,7 +1293,7 @@ def handle_scene_out(data):
 def handle_get_first_scene(data):
     project_name = data.get('project_name')
     if project_name:
-        project = Project.query.filter_by(name=project_name).first()
+        project = get_project_by_name(project_name, session.get('user_id'))
         if project and project.scenes:
             first_scene = project.scenes[0]
             emit('first_scene', scene_to_dict(first_scene))
@@ -1305,14 +1369,14 @@ def create_sequence_thumbnail(sprite_path, thumb_path, frame_width, size=(150, 1
 
 def get_thumbnail_path(project_name, filename):
     """썸네일 파일 경로 생성"""
-    project_folder = get_project_folder(project_name)
+    project_folder = get_project_folder(project_name, session.get('user_id'))
     thumb_dir = os.path.join(project_folder, 'library', 'thumbnails')
     os.makedirs(thumb_dir, exist_ok=True)
     return os.path.join(thumb_dir, f"{os.path.splitext(filename)[0]}.webp")
 
 def get_sequence_thumbnail_path(project_name, sequence_name):
     """시퀀스 썸네일 파일 경로 생성"""
-    project_folder = get_project_folder(project_name)
+    project_folder = get_project_folder(project_name, session.get('user_id'))
     thumb_dir = os.path.join(project_folder, 'library', 'sequence_thumbnails')
     os.makedirs(thumb_dir, exist_ok=True)
     return os.path.join(thumb_dir, f"{sequence_name}.webp")
@@ -1327,7 +1391,7 @@ def upload_image(project_name):
         files = request.files.getlist('file')
         overwrite = request.form.get('overwrite', 'false').lower() == 'true'
         
-        project_folder = get_project_folder(project_name)
+        project_folder = get_project_folder(project_name, session.get('user_id'))
         images_path = os.path.join(project_folder, 'library', 'images')
         os.makedirs(images_path, exist_ok=True)
         
@@ -1507,7 +1571,7 @@ def upload_sequence(project_name):
         if not check_file_size(sprite_file) or not check_file_size(meta_file):
             return jsonify({'error': '파일이 너무 큽니다 (최대 50MB).'}), 400
 
-        project_folder = get_project_folder(project_name)
+        project_folder = get_project_folder(project_name, session.get('user_id'))
         sequence_folder = os.path.join(project_folder, 'library', 'sequences', sequence_name)
         
         # 폴더가 이미 존재하면 삭제
@@ -1551,14 +1615,14 @@ def upload_sequence(project_name):
 @auth_required('viewer')
 def list_project_images(project_name):
     current_user = get_current_user_from_token()
-    project = get_project_by_name(project_name)
+    project = get_project_by_name(project_name, current_user.id)
     if not project:
         return jsonify({'error': 'Project not found'}), 404
     
     # 프로젝트 접근 권한 확인
     if not check_project_permission(current_user.id, project.id, 'viewer'):
         return jsonify({'error': 'Permission denied'}), 403
-    project_folder = get_project_folder(project_name)
+    project_folder = get_project_folder(project_name, current_user.id)
     images_path = os.path.join(project_folder, 'library', 'images')
     if not os.path.exists(images_path):
         return jsonify([])
@@ -1569,14 +1633,14 @@ def list_project_images(project_name):
 @auth_required('viewer')
 def list_project_sequences(project_name):
     current_user = get_current_user_from_token()
-    project = get_project_by_name(project_name)
+    project = get_project_by_name(project_name, current_user.id)
     if not project:
         return jsonify({'error': 'Project not found'}), 404
     
     # 프로젝트 접근 권한 확인
     if not check_project_permission(current_user.id, project.id, 'viewer'):
         return jsonify({'error': 'Permission denied'}), 403
-    project_folder = get_project_folder(project_name)
+    project_folder = get_project_folder(project_name, current_user.id)
     sequences_path = os.path.join(project_folder, 'library', 'sequences')
     if not os.path.exists(sequences_path):
         return jsonify([])
@@ -1593,7 +1657,7 @@ def list_project_sequences(project_name):
 def serve_project_image(project_name, filename):
     # URL 디코딩
     decoded_filename = unquote(filename)
-    project_folder = get_project_folder(project_name)
+    project_folder = get_project_folder(project_name, session.get('user_id'))
     images_path = os.path.join(project_folder, 'library', 'images')
     return send_from_directory(images_path, decoded_filename)
 
@@ -1601,17 +1665,18 @@ def serve_project_image(project_name, filename):
 def serve_project_sequence_frame(project_name, sequence_and_filename):
     # sequence_and_filename: '시퀀스명/프레임파일명.png'
     decoded_path = unquote(sequence_and_filename)
-    project_folder = get_project_folder(project_name)
+    project_folder = get_project_folder(project_name, session.get('user_id'))
     sequences_path = os.path.join(project_folder, 'library', 'sequences')
     return send_from_directory(sequences_path, decoded_path)
 
 @app.route('/api/projects/<project_name>/library/images/<filename>', methods=['DELETE'])
 @auth_required('editor')
 def delete_project_image(project_name, filename):
-    project = get_project_by_name(project_name)
+    current_user = get_current_user_from_token()
+    project = get_project_by_name(project_name, current_user.id)
     if not project:
         return jsonify({'error': 'Project not found'}), 404
-    project_folder = get_project_folder(project_name)
+    project_folder = get_project_folder(project_name, current_user.id)
     decoded_filename = unquote(filename)
     images_path = os.path.join(project_folder, 'library', 'images')
     file_path = os.path.join(images_path, decoded_filename)
@@ -1624,10 +1689,11 @@ def delete_project_image(project_name, filename):
 @app.route('/api/projects/<project_name>/library/sequences/<sequence_name>', methods=['DELETE'])
 @auth_required('editor')
 def delete_project_sequence(project_name, sequence_name):
-    project = get_project_by_name(project_name)
+    current_user = get_current_user_from_token()
+    project = get_project_by_name(project_name, current_user.id)
     if not project:
         return jsonify({'error': 'Project not found'}), 404
-    project_folder = get_project_folder(project_name)
+    project_folder = get_project_folder(project_name, current_user.id)
     sequences_path = os.path.join(project_folder, 'library', 'sequences')
     sequence_folder = os.path.join(sequences_path, safe_unicode_filename(sequence_name))
     if os.path.exists(sequence_folder):
@@ -1642,7 +1708,7 @@ def preload_project(project_name):
     """프로젝트 데이터를 미리 로드하여 캐시"""
     try:
         # 프로젝트 정보 가져오기
-        project = Project.query.filter_by(name=project_name).first()
+        project = get_project_by_name(project_name, session.get('user_id'))
         if not project:
             return jsonify({'error': 'Project not found'}), 404
         
@@ -1729,10 +1795,10 @@ def verify_overlay_token(token):
 @jwt_required()
 def create_overlay_token(project_id):
     """프로젝트의 오버레이 접근 토큰 생성 API"""
-    project = Project.query.get_or_404(project_id)
+    project = get_project_by_name(project_id) # project_id를 프로젝트 이름으로 변경
     
     # 프로젝트 접근 권한 확인
-    if not check_project_permission(project_id):
+    if not check_project_permission(project_id): # project_id를 프로젝트 이름으로 변경
         return jsonify({'message': '권한이 없습니다.'}), 403
         
     token = generate_overlay_token(project_id)
@@ -1741,5 +1807,5 @@ def create_overlay_token(project_id):
 @app.route('/overlay/<int:project_id>')
 def overlay_page(project_id):
     """오버레이 페이지 렌더링 - 퍼블릭 접근 허용"""
-    project = Project.query.get_or_404(project_id)
+    project = get_project_by_name(project_id) # project_id를 프로젝트 이름으로 변경
     return render_template('overlay.html', project=project)
