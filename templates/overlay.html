@@ -598,82 +598,38 @@
             }
         });
 
-        socket.on('scene_change', async function(data) {
+        // 씬 변경 이벤트 수신
+        socket.on('scene_change', async (data) => {
             console.log('🎬 Scene change event received:', data);
-            console.log('Current scene ID:', currentScene?.id);
-            console.log('New scene ID:', data.scene_id);
+            console.log('🌐 Loading scene from API:', data.scene_id);
             
-            // 현재 씬이 있으면 아웃모션 적용
-            if (currentScene) {
-                // 모든 인모션이 완료될 때까지 대기
-                const allElements = container.querySelectorAll('.overlay-object');
-                const allCompleted = Array.from(allElements).every(el => el.dataset.inMotionCompleted === 'true');
+            try {
+                // 오버레이 전용 API 사용 (인증 불필요)
+                const response = await fetch(`/api/overlay/scenes/${data.scene_id}`);
+                const newScene = await response.json();
+                console.log('📥 New scene loaded from API:', newScene);
                 
-                if (!allCompleted) {
-                    console.log('⏳ Waiting for all in-motions to complete...');
-                    return;
-                }
-
-                // 아웃모션 적용 및 완료 대기
-                await motionManager.waitForAllOutMotions();
+                currentScene = newScene;
+                motionManager.updateScene(newScene, false);
+                console.log('✅ New scene applied successfully');
+            } catch (error) {
+                console.error('❌ Error loading new scene:', error);
             }
-            
-            // 프리로딩된 데이터가 있으면 사용, 없으면 API 호출
-            let newScene;
-            if (preloadCache && preloadCache.scenes) {
-                const cachedScene = preloadCache.scenes.find(s => s.id === data.scene_id);
-                if (cachedScene) {
-                    console.log('💾 Using preloaded scene data:', cachedScene);
-                    newScene = cachedScene;
-                }
-            }
-            
-            if (!newScene) {
-                // 프리로딩된 데이터가 없으면 API 호출
-                try {
-                    console.log('🌐 Loading scene from API:', data.scene_id);
-                    const response = await fetch(`/api/scenes/${data.scene_id}`);
-                    newScene = await response.json();
-                    console.log('📥 New scene loaded from API:', newScene);
-                } catch (error) {
-                    console.error('❌ Error loading new scene:', error);
-                    return;
-                }
-            }
-            
-            // 새 씬으로 업데이트
-            currentScene = newScene;
-            motionManager.updateScene(newScene, false); // skipInMotion = false (인모션 적용)
-            
-            console.log('✅ New scene applied successfully');
         });
 
-        socket.on('scene_out', async function(data) {
+        // 씬 아웃 이벤트 수신
+        socket.on('scene_out', async (data) => {
             console.log('🎭 Scene out event received:', data);
-            console.log('Current scene before out motion:', currentScene);
-            console.log('MotionManager current scene:', motionManager.currentScene);
-            
-            // 아웃모션 적용 및 완료 대기
-            await motionManager.waitForAllOutMotions();
-            
-            // 아웃모션 완료 후 객체들 숨기기
-            const elements = container.querySelectorAll('.overlay-object');
-            elements.forEach(element => {
-                element.style.display = 'none';
-            });
-
-            // 더미 씬으로 교체
             console.log('🔄 Loading dummy scene...');
+            
             try {
                 const response = await fetch('/api/dummy-scene');
                 const dummyScene = await response.json();
                 console.log('📥 Dummy scene loaded:', dummyScene);
                 
-                // 더미 씬으로 업데이트 (인모션 스킵)
                 currentScene = dummyScene;
-                motionManager.updateScene(dummyScene, true); // skipInMotion = true
-                
-                console.log('✅ Dummy scene applied - no objects to display');
+                motionManager.updateScene(dummyScene, true);
+                console.log('✅ Dummy scene applied successfully');
             } catch (error) {
                 console.error('❌ Error loading dummy scene:', error);
             }

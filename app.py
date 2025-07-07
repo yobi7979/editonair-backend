@@ -1193,14 +1193,25 @@ def handle_get_first_scene(data):
 
 @app.route('/api/dummy-scene')
 def get_dummy_scene():
-    """빈 객체가 없는 더미 씬을 반환합니다."""
-    dummy_scene = {
+    """더미 씬 반환"""
+    return jsonify({
         'id': 0,
         'name': 'Dummy Scene',
-        'objects': [],  # 빈 객체 배열
-        'project_id': 1
-    }
-    return jsonify(dummy_scene)
+        'objects': [],
+        'duration': 0,
+        'order': 0
+    })
+
+@app.route('/api/overlay/scenes/<int:scene_id>')
+def get_overlay_scene(scene_id):
+    """오버레이 페이지 전용 씬 조회 API (인증 불필요)"""
+    try:
+        scene = Scene.query.get_or_404(scene_id)
+        print(f"Overlay scene request for scene {scene_id}: {scene.name}")
+        return jsonify(scene_to_dict(scene))
+    except Exception as e:
+        print(f"Error in get_overlay_scene: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 def create_thumbnail(image_path, thumb_path, size=(150, 150)):
     """이미지 썸네일 생성"""
