@@ -4,6 +4,12 @@ from datetime import datetime, timedelta
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+from flask_socketio import SocketIO, emit
+import bcrypt
+import eventlet
+
+eventlet.monkey_patch()
 
 app = Flask(__name__)
 CORS(app)
@@ -24,11 +30,15 @@ else:
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key')
+app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'your-secret-key')
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=1)
 
 # Initialize extensions
 db = SQLAlchemy(app)
+jwt = JWTManager(app)
+socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins="*")
 
-# Simple User model
+# Database Models
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
@@ -38,6 +48,14 @@ class User(db.Model):
 
     def __repr__(self):
         return f'<User {self.username}>'
+
+class Project(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user = db.relationship('User', backref=db.backref('projects', lazy=True))
 
 # Routes
 @app.route('/health')
@@ -59,12 +77,13 @@ def home():
 @app.route('/api/test')
 def test_db():
     try:
-        # Test database connection
         user_count = User.query.count()
+        project_count = Project.query.count()
         return jsonify({
             "status": "success",
             "message": "Database connection successful",
-            "user_count": user_count
+            "user_count": user_count,
+            "project_count": project_count
         }), 200
     except Exception as e:
         return jsonify({
@@ -72,14 +91,130 @@ def test_db():
             "message": f"Database error: {str(e)}"
         }), 500
 
+# Auth routes
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    try:
+        data = request.get_json()
+        username = data.get('username')
+        password = data.get('password')
+        
+        if not username or not password:
+            return jsonify({'error': 'Username and password required'}), 400
+            
+        user = User.query.filter_by(username=username).first()
+        if user and bcrypt.checkpw(password.encode('utf-8'), user.password.encode('utf-8')):
+            access_token = create_access_token(identity=user.id)
+            return jsonify({
+                'message': 'Login successful',
+                'access_token': access_token,
+                'user': {
+                    'id': user.id,
+                    'username': user.username
+                }
+            }), 200
+        else:
+            return jsonify({'error': 'Invalid credentials'}), 401
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/auth/register', methods=['POST'])
+def register():
+    try:
+        data = request.get_json()
+        username = data.get('username')
+        password = data.get('password')
+        
+        if not username or not password:
+            return jsonify({'error': 'Username and password required'}), 400
+            
+        if User.query.filter_by(username=username).first():
+            return jsonify({'error': 'Username already exists'}), 400
+            
+        hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        user = User(username=username, password=hashed_password)
+        db.session.add(user)
+        db.session.commit()
+        
+        access_token = create_access_token(identity=user.id)
+        return jsonify({
+            'message': 'Registration successful',
+            'access_token': access_token,
+            'user': {
+                'id': user.id,
+                'username': user.username
+            }
+        }), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/projects', methods=['GET'])
+@jwt_required()
+def get_projects():
+    try:
+        current_user_id = get_jwt_identity()
+        projects = Project.query.filter_by(user_id=current_user_id).all()
+        return jsonify([{
+            'id': p.id,
+            'name': p.name,
+            'created_at': p.created_at.isoformat() if p.created_at else None,
+            'updated_at': p.updated_at.isoformat() if p.updated_at else None
+        } for p in projects]), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/projects', methods=['POST'])
+@jwt_required()
+def create_project():
+    try:
+        current_user_id = get_jwt_identity()
+        data = request.get_json()
+        name = data.get('name')
+        
+        if not name:
+            return jsonify({'error': 'Project name required'}), 400
+            
+        project = Project(name=name, user_id=current_user_id)
+        db.session.add(project)
+        db.session.commit()
+        
+        return jsonify({
+            'id': project.id,
+            'name': project.name,
+            'created_at': project.created_at.isoformat(),
+            'updated_at': project.updated_at.isoformat()
+        }), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# SocketIO events
+@socketio.on('connect')
+def handle_connect():
+    print('Client connected')
+    emit('status', {'msg': 'Connected to EditOnAir backend'})
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    print('Client disconnected')
+
 if __name__ == '__main__':
     with app.app_context():
         try:
             db.create_all()
+            
+            # Create default admin user
+            admin = User.query.filter_by(username='admin').first()
+            if not admin:
+                admin_password = bcrypt.hashpw('admin123'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                admin = User(username='admin', password=admin_password)
+                db.session.add(admin)
+                db.session.commit()
+                print("Default admin user created")
+            
             print("Database tables created successfully")
         except Exception as e:
             print(f"Error creating database tables: {e}")
     
     port = int(os.environ.get('PORT', 5000))
     print(f"Starting app on port {port}")
-    app.run(debug=False, host='0.0.0.0', port=port) 
+    socketio.run(app, debug=False, host='0.0.0.0', port=port) 
