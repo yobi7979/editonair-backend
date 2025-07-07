@@ -29,11 +29,11 @@ monkey.patch_all()
 app = Flask(__name__)
 CORS(app, origins=["http://localhost:5173", "http://localhost:3000", "*"], supports_credentials=True)
 
-print("Starting application...")
-
-# 상수 정의
-ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'}
+# 파일 업로드 관련 상수
+ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg', 'tiff'}
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+
+print("Starting application...")
 
 try:
     # Configure database
@@ -72,8 +72,8 @@ except Exception as e:
     print(f"Error during initialization: {e}")
     raise
 
-# 전역 변수들 (중복 제거)
-# socketio는 이미 위에서 초기화됨
+# 전역 변수들
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent', allow_unsafe_werkzeug=True)
 
 # 사용자별 송출 상태 관리 (메모리 기반)
 user_broadcast_state = {}
@@ -299,13 +299,13 @@ def project_to_dict(project):
             'name': scene.name,
             'order': scene.order,
             'objects': [{
-                'id': obj.id,
-                'name': obj.name,
-                'type': obj.type,
-                'order': obj.order,
-                'properties': json.loads(obj.properties) if obj.properties else {},
-                'in_motion': json.loads(obj.in_motion) if obj.in_motion else {},
-                'out_motion': json.loads(obj.out_motion) if obj.out_motion else {},
+        'id': obj.id,
+        'name': obj.name,
+        'type': obj.type,
+        'order': obj.order,
+        'properties': json.loads(obj.properties) if obj.properties else {},
+        'in_motion': json.loads(obj.in_motion) if obj.in_motion else {},
+        'out_motion': json.loads(obj.out_motion) if obj.out_motion else {},
                 'timing': json.loads(obj.timing) if obj.timing else {}
             } for obj in sorted(scene.objects, key=lambda x: x.order)]
         } for scene in sorted(project.scenes, key=lambda x: x.order)]
@@ -795,7 +795,7 @@ def handle_project_share(project_name):
     
     if existing_permission:
         existing_permission.permission_type = data['permission_type']
-    else:
+                else:
         new_permission = ProjectPermission(
             project_id=project.id,
             user_id=share_user.id,
@@ -803,7 +803,7 @@ def handle_project_share(project_name):
         )
         db.session.add(new_permission)
         
-    db.session.commit()
+        db.session.commit()
     return jsonify({'message': 'Project shared successfully'})
 
 # Scene CRUD operations
@@ -1774,7 +1774,8 @@ def preload_project(project_name):
 # --- Main Entry Point ---
 
 if __name__ == '__main__':
-    with app.app_context():
+    
+with app.app_context():
         db.create_all()  # 데이터베이스 테이블 생성
         
         # 기본 관리자 계정 생성
@@ -1817,10 +1818,10 @@ def verify_overlay_token(token):
 @jwt_required()
 def create_overlay_token(project_id):
     """프로젝트의 오버레이 접근 토큰 생성 API"""
-    project = get_project_by_name(project_id)  # project_id를 프로젝트 이름으로 변경
+    project = get_project_by_name(project_id) # project_id를 프로젝트 이름으로 변경
     
     # 프로젝트 접근 권한 확인
-    if not check_project_permission(project_id):  # project_id를 프로젝트 이름으로 변경
+    if not check_project_permission(project_id): # project_id를 프로젝트 이름으로 변경
         return jsonify({'message': '권한이 없습니다.'}), 403
         
     token = generate_overlay_token(project_id)
@@ -1829,5 +1830,5 @@ def create_overlay_token(project_id):
 @app.route('/overlay/<int:project_id>')
 def overlay_page(project_id):
     """오버레이 페이지 렌더링 - 퍼블릭 접근 허용"""
-    project = get_project_by_name(project_id)  # project_id를 프로젝트 이름으로 변경
+    project = get_project_by_name(project_id) # project_id를 프로젝트 이름으로 변경
     return render_template('overlay.html', project=project)
