@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { getProjects, createProject, deleteProject } from '../../api/projects';
+import { useNavigate } from 'react-router-dom';
+import { getProjects, createProject, deleteProject, getCurrentUser } from '../../api/projects';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -11,12 +12,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { PlusCircle, FolderOpen, Trash2 } from 'lucide-react';
+import { PlusCircle, FolderOpen, Trash2, LogOut, User } from 'lucide-react';
 
 const LOCAL_API = "http://localhost:5000/api";
 const IP_API = "https://editonair-backend-production.up.railway.app/api";
 
 const ProjectSelectionModal = ({ isOpen, onProjectSelect, onProjectCreate, setApiBaseUrl }) => {
+  const navigate = useNavigate();
   const [newProjectName, setNewProjectName] = useState('');
   const [showCreateInput, setShowCreateInput] = useState(false);
   const [projects, setProjects] = useState([]);
@@ -24,15 +26,39 @@ const ProjectSelectionModal = ({ isOpen, onProjectSelect, onProjectCreate, setAp
   const [error, setError] = useState(null);
   const [apiUrl, setApiUrl] = useState(IP_API);
   const [activeApiUrl, setActiveApiUrl] = useState(IP_API);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [userLoading, setUserLoading] = useState(false);
 
   const handleConnect = () => {
     setActiveApiUrl(apiUrl);
     if (setApiBaseUrl) setApiBaseUrl(apiUrl);
   };
 
+  const fetchCurrentUser = async () => {
+    setUserLoading(true);
+    try {
+      const user = await getCurrentUser(activeApiUrl);
+      setCurrentUser(user);
+    } catch (err) {
+      console.error('Failed to fetch user info:', err);
+      // 토큰이 유효하지 않으면 로그인 페이지로 이동
+      if (err.message.includes('401') || err.message.includes('Unauthorized')) {
+        handleLogout();
+      }
+    } finally {
+      setUserLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    navigate('/login');
+  };
+
   useEffect(() => {
     if (isOpen) {
       fetchProjects();
+      fetchCurrentUser();
     }
   }, [isOpen, activeApiUrl]);
 
@@ -49,15 +75,38 @@ const ProjectSelectionModal = ({ isOpen, onProjectSelect, onProjectCreate, setAp
     setIsLoading(false);
   };
 
-  const handleCreateNewProject = async () => {
-    if (!newProjectName.trim()) {
-      setError('프로젝트 이름을 입력해주세요.');
-      return;
+  // 프로젝트 이름 유효성 검사 함수
+  const validateProjectName = (name) => {
+    const errors = [];
+    
+    if (!name.trim()) {
+      errors.push('프로젝트 이름을 입력해주세요.');
+      return errors;
     }
     
-    // 클라이언트 측 중복 체크 (대소문자 구분 없이)
-    if (projects.some(p => p.name.toLowerCase() === newProjectName.trim().toLowerCase())) {
-      setError('이미 존재하는 프로젝트 이름입니다.');
+    // 영문 대문자 검사
+    if (/[A-Z]/.test(name)) {
+      errors.push('영문 대문자는 사용할 수 없습니다. 소문자를 사용해주세요.');
+    }
+    
+    // 띄어쓰기 검사
+    if (/\s/.test(name)) {
+      errors.push('띄어쓰기는 사용할 수 없습니다. 하이픈(-) 또는 언더스코어(_)를 사용해주세요.');
+    }
+    
+    // 중복 이름 검사 (대소문자 구분 없이)
+    if (projects.some(p => p.name.toLowerCase() === name.trim().toLowerCase())) {
+      errors.push('이미 존재하는 프로젝트 이름입니다.');
+    }
+    
+    return errors;
+  };
+
+  const handleCreateNewProject = async () => {
+    const validationErrors = validateProjectName(newProjectName);
+    
+    if (validationErrors.length > 0) {
+      setError(validationErrors.join(' '));
       return;
     }
 
@@ -85,20 +134,25 @@ const ProjectSelectionModal = ({ isOpen, onProjectSelect, onProjectCreate, setAp
     }
   };
 
-  // 실시간 중복 체크 함수
+  // 실시간 중복 체크 함수 (더 이상 사용하지 않음)
   const checkDuplicateName = (name) => {
     if (!name.trim()) return false;
     return projects.some(p => p.name.toLowerCase() === name.trim().toLowerCase());
   };
 
-  // 입력값 변경 시 실시간 중복 체크
+  // 입력값 변경 시 실시간 유효성 검사
   const handleNameChange = (e) => {
     const value = e.target.value;
     setNewProjectName(value);
     
-    // 실시간으로 중복 체크하고 에러 메시지 표시
-    if (value.trim() && checkDuplicateName(value)) {
-      setError('이미 존재하는 프로젝트 이름입니다.');
+    // 실시간으로 유효성 검사하고 에러 메시지 표시
+    if (value.trim()) {
+      const validationErrors = validateProjectName(value);
+      if (validationErrors.length > 0) {
+        setError(validationErrors.join(' '));
+      } else {
+        setError(null);
+      }
     } else {
       setError(null);
     }
@@ -133,12 +187,39 @@ const ProjectSelectionModal = ({ isOpen, onProjectSelect, onProjectCreate, setAp
 
   return (
     <Dialog open={isOpen} onOpenChange={() => { /* Controlled by isOpen prop */ }}>
-      <DialogContent className="sm:max-w-[525px]">
+      <DialogContent className="sm:max-w-[650px]">
         <DialogHeader>
-          <DialogTitle>Open or Create Project</DialogTitle>
-          <DialogDescription>
-            Select an existing project to open or create a new one.
-          </DialogDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <DialogTitle>Open or Create Project</DialogTitle>
+              <DialogDescription>
+                Select an existing project to open or create a new one.
+              </DialogDescription>
+            </div>
+            <div className="flex items-center space-x-2">
+              {userLoading ? (
+                <div className="text-sm text-gray-500">Loading...</div>
+              ) : currentUser ? (
+                <div className="flex items-center space-x-3">
+                  <div className="flex items-center space-x-2 px-3 py-1 bg-gray-100 rounded-md">
+                    <User className="h-4 w-4 text-gray-600" />
+                    <span className="text-sm font-medium text-gray-800">{currentUser.username}</span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleLogout}
+                    className="flex items-center space-x-1 hover:bg-red-50 hover:border-red-200"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    <span>로그아웃</span>
+                  </Button>
+                </div>
+              ) : (
+                <div className="text-sm text-red-500">사용자 정보 없음</div>
+              )}
+            </div>
+          </div>
         </DialogHeader>
         <div className="mb-2 flex items-center">
           <span className="font-medium text-sm mr-2">API 서버 선택:</span>
@@ -172,20 +253,31 @@ const ProjectSelectionModal = ({ isOpen, onProjectSelect, onProjectCreate, setAp
             <div className="flex w-full max-w-sm items-center space-x-2">
               <Input 
                 type="text" 
-                placeholder="프로젝트 이름을 입력하세요..." 
+                placeholder="프로젝트 이름을 입력하세요 (소문자, 하이픈, 언더스코어만 사용)" 
                 value={newProjectName}
                 onChange={handleNameChange}
-                onKeyDown={(e) => e.key === 'Enter' && !checkDuplicateName(newProjectName) && handleCreateNewProject()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const validationErrors = validateProjectName(newProjectName);
+                    if (validationErrors.length === 0) {
+                      handleCreateNewProject();
+                    }
+                  }
+                }}
                 autoFocus
-                className={checkDuplicateName(newProjectName) ? 'border-red-500' : ''}
+                className={error ? 'border-red-500' : ''}
               />
               <Button 
                 onClick={handleCreateNewProject} 
-                disabled={isLoading || !newProjectName.trim() || checkDuplicateName(newProjectName)}
+                disabled={isLoading || validateProjectName(newProjectName).length > 0}
               >
                 생성
               </Button>
-              <Button variant="outline" onClick={() => setShowCreateInput(false)}>Cancel</Button>
+              <Button variant="outline" onClick={() => {
+                setShowCreateInput(false);
+                setNewProjectName('');
+                setError(null);
+              }}>Cancel</Button>
             </div>
           )}
           

@@ -9,7 +9,6 @@ export default function RegisterPage() {
     const [error, setError] = useState('');
     const [formData, setFormData] = useState({
         username: '',
-        email: '',
         password: '',
         confirmPassword: ''
     });
@@ -35,14 +34,13 @@ export default function RegisterPage() {
         }
 
         try {
-            const response = await fetch('/api/auth/register', {
+            const response = await fetch('https://editonair-backend-production.up.railway.app/api/auth/register', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
                     username: formData.username,
-                    email: formData.email,
                     password: formData.password
                 })
             });
@@ -50,11 +48,12 @@ export default function RegisterPage() {
             const data = await response.json();
 
             if (!response.ok) {
-                throw new Error(data.message || '회원가입에 실패했습니다.');
+                throw new Error(data.error || '회원가입에 실패했습니다.');
             }
 
-            // 로그인 페이지로 이동
-            navigate('/login');
+            // 회원가입 성공 시 토큰 저장 후 메인 페이지로 이동
+            localStorage.setItem('token', data.token);
+            navigate('/');
         } catch (err) {
             setError(err.message);
         } finally {
@@ -90,21 +89,7 @@ export default function RegisterPage() {
                         />
                     </div>
                     
-                    <div>
-                        <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-                            이메일
-                        </label>
-                        <Input
-                            id="email"
-                            name="email"
-                            type="email"
-                            value={formData.email}
-                            onChange={handleChange}
-                            required
-                            className="w-full"
-                            placeholder="이메일을 입력하세요"
-                        />
-                    </div>
+
                     
                     <div>
                         <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">

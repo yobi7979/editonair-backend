@@ -15,6 +15,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import RenameDialog from '../modals/RenameDialog';
+import { getCurrentUser } from '../../api/projects';
 
 export default function Sidebar({ scenes, selectedSceneId, setSelectedSceneId, updateProjectOrder, onSelectScene, onAddScene, onRenameScene, onDeleteScene, onSaveScene, hasUnsavedChanges, selectedObjectId, onSelectObject, onUpdateObjectProperty, apiBaseUrl }) {
   const [editingSceneId, setEditingSceneId] = useState(null);
@@ -58,6 +59,20 @@ export default function Sidebar({ scenes, selectedSceneId, setSelectedSceneId, u
 
   const [savingSceneId, setSavingSceneId] = useState(null);
   const [unsavedScenes, setUnsavedScenes] = useState(new Set());
+  const [currentUser, setCurrentUser] = useState(null);
+
+  // 컴포넌트 마운트 시 현재 사용자 정보 가져오기
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      try {
+        const user = await getCurrentUser(apiBaseUrl);
+        setCurrentUser(user);
+      } catch (error) {
+        console.error('Failed to fetch current user:', error);
+      }
+    };
+    fetchCurrentUser();
+  }, [apiBaseUrl]);
 
   const handleSceneChange = (sceneId) => {
     setUnsavedScenes(prev => new Set(prev).add(sceneId));
@@ -83,19 +98,39 @@ export default function Sidebar({ scenes, selectedSceneId, setSelectedSceneId, u
   };
 
   const handlePushScene = async (sceneId) => {
+    console.log('handlePushScene called with sceneId:', sceneId);
     try {
+      const token = localStorage.getItem('token');
+      console.log('Token found:', token ? 'Yes' : 'No');
+      console.log('Token preview:', token ? token.substring(0, 10) + '...' : 'null');
+      
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      console.log('Making push request to:', `${apiBaseUrl}/scenes/${sceneId}/push`);
+      console.log('Headers:', JSON.stringify(headers, null, 2));
+      
       const response = await fetch(`${apiBaseUrl}/scenes/${sceneId}/push`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        }
+        headers: headers,
       });
       
+      console.log('Response status:', response.status);
+      console.log('Response ok:', response.ok);
+      
       if (response.ok) {
+        console.log('Push successful, setting pushed scene ID');
         setPushedSceneId(sceneId);
         setTimeout(() => setPushedSceneId(null), 2000);
       } else {
-        console.error('Failed to push scene');
+        console.error('Failed to push scene, status:', response.status);
+        const errorText = await response.text();
+        console.error('Error response:', errorText);
       }
     } catch (error) {
       console.error('Error pushing scene:', error);
@@ -103,19 +138,38 @@ export default function Sidebar({ scenes, selectedSceneId, setSelectedSceneId, u
   };
 
   const handleOutScene = async (sceneId) => {
+    console.log('handleOutScene called with sceneId:', sceneId);
     try {
+      const token = localStorage.getItem('token');
+      console.log('Token found:', token ? 'Yes' : 'No');
+      
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      console.log('Making out request to:', `${apiBaseUrl}/scenes/${sceneId}/out`);
+      console.log('Headers:', headers);
+      
       const response = await fetch(`${apiBaseUrl}/scenes/${sceneId}/out`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        }
+        headers: headers,
       });
       
+      console.log('Response status:', response.status);
+      console.log('Response ok:', response.ok);
+      
       if (response.ok) {
+        console.log('Out successful, setting out scene ID');
         setOutSceneId(sceneId);
         setTimeout(() => setOutSceneId(null), 2000);
       } else {
-        console.error('Failed to out scene');
+        console.error('Failed to out scene, status:', response.status);
+        const errorText = await response.text();
+        console.error('Error response:', errorText);
       }
     } catch (error) {
       console.error('Error out scene:', error);
@@ -123,15 +177,26 @@ export default function Sidebar({ scenes, selectedSceneId, setSelectedSceneId, u
   };
 
   const getMainUrl = () => {
-    const projectId = window.location.pathname.split('/')[2];
-    if (!projectId) return '';
-    return `${apiBaseUrl.replace(/\/api$/, '')}/overlay/project/${projectId}`;
+    const pathParts = window.location.pathname.split('/');
+    console.log('Current pathname:', window.location.pathname);
+    console.log('Path parts:', pathParts);
+    const projectId = pathParts[2];
+    console.log('Extracted projectId:', projectId);
+    if (!projectId || !currentUser) return '';
+    const url = `${apiBaseUrl.replace(/\/api$/, '')}/overlay/project/${projectId}?user_id=${currentUser.id}`;
+    console.log('Generated main URL:', url);
+    return url;
   };
 
   const getSceneUrl = (sceneId) => {
-    const projectId = window.location.pathname.split('/')[2];
-    if (!projectId) return '';
-    return `${apiBaseUrl.replace(/\/api$/, '')}/overlay/project/${projectId}/scene/${sceneId}`;
+    const pathParts = window.location.pathname.split('/');
+    console.log('Current pathname for scene:', window.location.pathname);
+    const projectId = pathParts[2];
+    console.log('Extracted projectId for scene:', projectId);
+    if (!projectId || !currentUser) return '';
+    const url = `${apiBaseUrl.replace(/\/api$/, '')}/overlay/project/${projectId}/scene/${sceneId}?user_id=${currentUser.id}`;
+    console.log('Generated scene URL:', url);
+    return url;
   };
 
   // dnd-kit sensors
@@ -235,7 +300,7 @@ export default function Sidebar({ scenes, selectedSceneId, setSelectedSceneId, u
   };
 
   return (
-    <aside className="bg-gray-800 text-gray-300 w-72 p-4 flex flex-col shadow-lg space-y-4">
+    <aside className="bg-gray-800 text-gray-300 w-72 p-4 flex flex-col shadow-lg space-y-4 h-full">
       <div className="flex items-center justify-between pb-2 border-b border-gray-700">
         <h2 className="text-lg font-semibold text-white">Scenes</h2>
         <button
@@ -248,7 +313,7 @@ export default function Sidebar({ scenes, selectedSceneId, setSelectedSceneId, u
       </div>
 
       <div
-        className="flex-1 overflow-y-auto space-y-1 pr-1 -mr-1_5"
+        className="flex-1 overflow-y-auto space-y-1 pr-1 -mr-1_5 min-h-0"
         tabIndex={0}
         onKeyDown={handleKeyDown}
       >

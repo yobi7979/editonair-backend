@@ -1,4 +1,36 @@
 /**
+ * JWT 토큰을 포함한 헤더 생성
+ * @returns {Object} Authorization 헤더가 포함된 헤더 객체
+ */
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('token');
+  const headers = {
+    'Content-Type': 'application/json',
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  return headers;
+};
+
+/**
+ * JWT 토큰을 포함한 헤더 생성 (파일 업로드용 - Content-Type 제외)
+ * @returns {Object} Authorization 헤더만 포함된 헤더 객체
+ */
+const getAuthHeadersForUpload = () => {
+  const token = localStorage.getItem('token');
+  const headers = {};
+  
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  
+  return headers;
+};
+
+/**
  * A helper function to handle API responses, parse JSON, and throw errors.
  * @param {Response} response - The fetch API response object.
  * @returns {Promise<any>} The JSON data from the response.
@@ -21,7 +53,9 @@ const handleResponse = async (response) => {
  * @returns {Promise<Array<Object>>}
  */
 export const getProjects = async (apiBaseUrl) => {
-  const response = await fetch(`${apiBaseUrl}/projects`);
+  const response = await fetch(`${apiBaseUrl}/projects`, {
+    headers: getAuthHeaders(),
+  });
   return handleResponse(response);
 };
 
@@ -32,7 +66,9 @@ export const getProjects = async (apiBaseUrl) => {
  * @returns {Promise<Object>}
  */
 export const getProject = async (apiBaseUrl, projectId) => {
-  const response = await fetch(`${apiBaseUrl}/projects/${projectId}`);
+  const response = await fetch(`${apiBaseUrl}/projects/${projectId}`, {
+    headers: getAuthHeaders(),
+  });
   return handleResponse(response);
 };
 
@@ -45,7 +81,7 @@ export const getProject = async (apiBaseUrl, projectId) => {
 export const createProject = async (apiBaseUrl, projectData) => {
   const response = await fetch(`${apiBaseUrl}/projects`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify(projectData),
   });
   return handleResponse(response);
@@ -61,7 +97,7 @@ export const createProject = async (apiBaseUrl, projectData) => {
 export const updateProject = async (apiBaseUrl, projectId, projectData) => {
   const response = await fetch(`${apiBaseUrl}/projects/${projectId}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify(projectData),
   });
   return handleResponse(response);
@@ -76,6 +112,7 @@ export const updateProject = async (apiBaseUrl, projectId, projectData) => {
 export const deleteProject = async (apiBaseUrl, projectName) => {
   const response = await fetch(`${apiBaseUrl}/projects/${projectName}`, {
     method: "DELETE",
+    headers: getAuthHeaders(),
   });
   return handleResponse(response);
 };
@@ -92,7 +129,7 @@ export const deleteProject = async (apiBaseUrl, projectName) => {
 export const createScene = async (apiBaseUrl, projectId, sceneData) => {
   const response = await fetch(`${apiBaseUrl}/projects/${projectId}/scenes`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify(sceneData),
   });
   return handleResponse(response);
@@ -108,9 +145,7 @@ export const createScene = async (apiBaseUrl, projectId, sceneData) => {
 export const updateScene = async (apiBaseUrl, sceneId, sceneData) => {
   const response = await fetch(`${apiBaseUrl}/scenes/${sceneId}`, {
     method: "PUT",
-    headers: {
-      "Content-Type": "application/json; charset=utf-8"
-    },
+    headers: getAuthHeaders(),
     body: JSON.stringify(sceneData)
   });
   return handleResponse(response);
@@ -125,6 +160,7 @@ export const updateScene = async (apiBaseUrl, sceneId, sceneData) => {
 export const deleteScene = async (apiBaseUrl, sceneId) => {
   const response = await fetch(`${apiBaseUrl}/scenes/${sceneId}`, {
     method: "DELETE",
+    headers: getAuthHeaders(),
   });
   return handleResponse(response);
 };
@@ -141,7 +177,7 @@ export const deleteScene = async (apiBaseUrl, sceneId) => {
 export const createObject = async (apiBaseUrl, sceneId, objectData) => {
   const response = await fetch(`${apiBaseUrl}/scenes/${sceneId}/objects`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify(objectData),
   });
   return handleResponse(response);
@@ -157,7 +193,7 @@ export const createObject = async (apiBaseUrl, sceneId, objectData) => {
 export const updateObject = async (apiBaseUrl, objectId, objectData) => {
   const response = await fetch(`${apiBaseUrl}/objects/${objectId}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify(objectData),
   });
   return handleResponse(response);
@@ -172,6 +208,7 @@ export const updateObject = async (apiBaseUrl, objectId, objectData) => {
 export const deleteObject = async (apiBaseUrl, objectId) => {
   const response = await fetch(`${apiBaseUrl}/objects/${objectId}`, {
     method: "DELETE",
+    headers: getAuthHeaders(),
   });
   return handleResponse(response);
 };
@@ -186,7 +223,7 @@ export const deleteObject = async (apiBaseUrl, objectId) => {
 export const updateObjectOrders = async (apiBaseUrl, sceneId, objectOrders) => {
   const response = await fetch(`${apiBaseUrl}/scenes/${sceneId}/object-orders`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ objectOrders }),
   });
   return handleResponse(response);
@@ -210,6 +247,7 @@ export const uploadProjectImage = async (apiBaseUrl, projectId, files, overwrite
   }
   const response = await fetch(`${apiBaseUrl}/projects/${projectId}/upload/image`, {
     method: 'POST',
+    headers: getAuthHeadersForUpload(),
     body: formData,
   });
   if (response.status === 409) {
@@ -235,6 +273,7 @@ export const uploadProjectSequence = async (apiBaseUrl, projectId, files, sequen
   formData.append('sequence_name', sequenceName);
   const response = await fetch(`${apiBaseUrl}/projects/${projectId}/upload/sequence`, {
     method: 'POST',
+    headers: getAuthHeadersForUpload(),
     body: formData,
   });
   return handleResponse(response);
@@ -247,7 +286,9 @@ export const uploadProjectSequence = async (apiBaseUrl, projectId, files, sequen
  * @returns {Promise<Array<string>>}
  */
 export const getProjectImages = async (apiBaseUrl, projectId) => {
-  const response = await fetch(`${apiBaseUrl}/projects/${projectId}/library/images`);
+  const response = await fetch(`${apiBaseUrl}/projects/${projectId}/library/images`, {
+    headers: getAuthHeaders(),
+  });
   return handleResponse(response);
 };
 
@@ -258,7 +299,9 @@ export const getProjectImages = async (apiBaseUrl, projectId) => {
  * @returns {Promise<Array<{name: string, frames: Array<string>}>>}
  */
 export const getProjectSequences = async (apiBaseUrl, projectId) => {
-  const response = await fetch(`${apiBaseUrl}/projects/${projectId}/library/sequences`);
+  const response = await fetch(`${apiBaseUrl}/projects/${projectId}/library/sequences`, {
+    headers: getAuthHeaders(),
+  });
   return handleResponse(response);
 };
 
@@ -272,6 +315,7 @@ export const getProjectSequences = async (apiBaseUrl, projectId) => {
 export const deleteProjectImage = async (apiBaseUrl, projectId, filename) => {
   const response = await fetch(`${apiBaseUrl}/projects/${projectId}/library/images/${encodeURIComponent(filename)}`, {
     method: 'DELETE',
+    headers: getAuthHeaders(),
   });
   if (!response.ok) throw new Error('삭제 실패');
   return response.json();
@@ -287,8 +331,22 @@ export const deleteProjectImage = async (apiBaseUrl, projectId, filename) => {
 export const deleteProjectSequence = async (apiBaseUrl, projectName, sequenceName) => {
   const response = await fetch(
     `${apiBaseUrl}/projects/${projectName}/library/sequences/${encodeURIComponent(sequenceName)}`,
-    { method: "DELETE" }
+    { method: "DELETE", headers: getAuthHeaders() }
   );
   if (!response.ok) throw new Error('삭제 실패');
   return response.json();
+};
+
+// --- User Management ---
+
+/**
+ * 현재 로그인한 사용자 정보를 가져옵니다.
+ * @param {string} apiBaseUrl
+ * @returns {Promise<Object>}
+ */
+export const getCurrentUser = async (apiBaseUrl) => {
+  const response = await fetch(`${apiBaseUrl}/auth/me`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
 };

@@ -52,6 +52,7 @@ function SortableObjectItem({ id, object, selectedObjectId, selectedObjectIds, e
           onSelectObject(object.id);
         }
       }}
+      data-object-id={object.id}
       {...(isLocked ? { draggable: false } : {})}
     >
       {/* 잠금/숨김 버튼 */}
@@ -112,7 +113,7 @@ function SortableObjectItem({ id, object, selectedObjectId, selectedObjectIds, e
           />
         ) : (
           <span 
-            className="truncate w-28 flex-shrink-0 text-[0.65rem] cursor-pointer px-1"
+            className="truncate w-28 flex-shrink-0 text-[0.65rem] text-white cursor-pointer px-1"
             title={object.name}
             onClick={() => { if (editingObjectId !== object.id) onSelectObject(object.id); }}
             onDoubleClick={() => {
@@ -369,7 +370,7 @@ export default function Timeline({ sceneObjects = [], selectedObjectId, selected
   }, [sceneObjects, isPlaying]);
 
   return (
-    <div className="bg-gray-900 border-t border-gray-800 shadow-lg flex flex-col h-70 min-h-[280px] max-h-[280px] select-none">
+    <div className="bg-gray-900 border-t border-gray-800 shadow-lg flex flex-col h-75 min-h-[300px] max-h-[300px] select-none">
       {/* 탭 UI */}
       <div className="flex items-center border-b border-gray-800 bg-gray-900">
         <button
@@ -394,9 +395,9 @@ export default function Timeline({ sceneObjects = [], selectedObjectId, selected
       {/* 탭 컨텐츠 */}
       <div className={`flex-1 h-full ${activeTab === 'timeline' ? 'overflow-y-hidden' : 'overflow-y-auto'}`}>
         {activeTab === 'timeline' ? (
-          <div className="h-70 bg-gray-800 flex flex-col shadow-inner">
+          <div className="h-full bg-gray-800 flex flex-col shadow-inner">
             {/* Timeline Controls - 고정 영역 */}
-            <div className="flex items-center justify-between p-3 bg-gray-900 border-b border-gray-700">
+            <div className="flex items-center justify-between p-3 bg-gray-900 border-b border-gray-700 flex-shrink-0">
               <div className="flex items-center space-x-2">
                 <button 
                   onClick={togglePlay}
@@ -442,8 +443,8 @@ export default function Timeline({ sceneObjects = [], selectedObjectId, selected
             </div>
 
             {/* Objects List Area - 스크롤 가능한 영역 */}
-            <div className="flex-1 overflow-y-auto bg-gray-800 pb-8" ref={scrollContainerRef}>
-              <div className="pt-1 px-3">
+            <div className="flex-1 overflow-y-auto bg-gray-800 min-h-0 timeline-scroll" ref={scrollContainerRef}>
+              <div className="p-3 pb-4 timeline-objects-container">
                 {sceneObjects.length > 0 ? (
                   <DndContext
                     sensors={sensors}
@@ -763,7 +764,7 @@ const MotionSelector = ({ motionType, motionDirection, objectId, onUpdateObjectP
         className="w-full flex items-center justify-between text-[0.6rem] bg-gray-700 hover:bg-gray-600/70 px-1 py-0.5 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-colors"
       >
         <Icon size={10} className={`mr-1 ${motionDirection === 'in' ? 'text-green-400' : 'text-red-400'}`} />
-        <span className="capitalize truncate flex-1 text-left">
+        <span className="capitalize truncate flex-1 text-left text-white">
           {getCurrentEffectLabel()}
         </span>
         <ChevronDown size={10} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
@@ -822,7 +823,7 @@ const MotionSelector = ({ motionType, motionDirection, objectId, onUpdateObjectP
         <div className="fixed z-[9999] w-64 bg-gray-700 border border-gray-600 rounded-md shadow-lg p-2" style={getSettingsPanelStyle()} onMouseDown={e => e.stopPropagation()}>
           <div className="space-y-2">
             <div className="flex justify-between items-center mb-2">
-              <h3 className="text-[0.8rem] font-medium">
+              <h3 className="text-[0.8rem] font-medium text-white">
                 {Object.values(motionCategories).find(cat => currentSettings.type in cat.effects)?.effects[currentSettings.type]?.label} 설정
               </h3>
               <div className="flex space-x-2">
@@ -841,43 +842,43 @@ const MotionSelector = ({ motionType, motionDirection, objectId, onUpdateObjectP
               </div>
             </div>
             <div>
-              <label className="text-[0.7rem] text-gray-300">지속 시간 (초)</label>
+              <label className="text-[0.7rem] text-white">지속 시간 (초)</label>
               <input
                 type="number"
                 min="0"
                 step="0.1"
                 value={currentSettings.duration || 0.5}
                 onChange={(e) => handleUpdateSettings({ ...currentSettings, duration: parseFloat(e.target.value) })}
-                className="w-full text-[0.7rem] bg-gray-600 border border-gray-500 rounded px-1 py-0.5"
+                className="w-full text-[0.7rem] bg-gray-600 border border-gray-500 rounded px-1 py-0.5 text-white"
               />
             </div>
             <div>
-              <label className="text-[0.7rem] text-gray-300">지연 시간 (초)</label>
+              <label className="text-[0.7rem] text-white">지연 시간 (초)</label>
               <input
                 type="number"
                 min="0"
                 step="0.1"
                 value={currentSettings.delay || 0}
                 onChange={(e) => handleUpdateSettings({ ...currentSettings, delay: parseFloat(e.target.value) })}
-                className="w-full text-[0.7rem] bg-gray-600 border border-gray-500 rounded px-1 py-0.5"
+                className="w-full text-[0.7rem] bg-gray-600 border border-gray-500 rounded px-1 py-0.5 text-white"
               />
             </div>
             {currentSettings.type === 'scale' && (
               <div>
-                <label className="text-[0.7rem] text-gray-300">크기 비율 (1.0 = 원래 크기)</label>
+                <label className="text-[0.7rem] text-white">크기 비율 (1.0 = 원래 크기)</label>
                 <input
                   type="number"
                   min="0.1"
                   step="0.1"
                   value={currentSettings.scale || 1.2}
                   onChange={(e) => handleUpdateSettings({ ...currentSettings, scale: parseFloat(e.target.value) })}
-                  className="w-full text-[0.7rem] bg-gray-600 border border-gray-500 rounded px-1 py-0.5"
+                  className="w-full text-[0.7rem] bg-gray-600 border border-gray-500 rounded px-1 py-0.5 text-white"
                 />
               </div>
             )}
             {currentSettings.type === 'rotate' && (
               <div>
-                <label className="text-[0.7rem] text-gray-300">회전 각도 (도)</label>
+                <label className="text-[0.7rem] text-white">회전 각도 (도)</label>
                 <input
                   type="number"
                   min="0"
@@ -885,13 +886,13 @@ const MotionSelector = ({ motionType, motionDirection, objectId, onUpdateObjectP
                   step="1"
                   value={currentSettings.angle || 360}
                   onChange={(e) => handleUpdateSettings({ ...currentSettings, angle: parseInt(e.target.value) })}
-                  className="w-full text-[0.7rem] bg-gray-600 border border-gray-500 rounded px-1 py-0.5"
+                  className="w-full text-[0.7rem] bg-gray-600 border border-gray-500 rounded px-1 py-0.5 text-white"
                 />
               </div>
             )}
             {(currentSettings.type === 'bounce' || currentSettings.type === 'elastic') && (
               <div>
-                <label className="text-[0.7rem] text-gray-300">효과 강도 (0.1 = 약함, 1.0 = 강함)</label>
+                <label className="text-[0.7rem] text-white">효과 강도 (0.1 = 약함, 1.0 = 강함)</label>
                 <input
                   type="number"
                   min="0.1"
@@ -899,7 +900,7 @@ const MotionSelector = ({ motionType, motionDirection, objectId, onUpdateObjectP
                   step="0.1"
                   value={currentSettings.intensity || 0.5}
                   onChange={(e) => handleUpdateSettings({ ...currentSettings, intensity: parseFloat(e.target.value) })}
-                  className="w-full text-[0.7rem] bg-gray-600 border border-gray-500 rounded px-1 py-0.5"
+                  className="w-full text-[0.7rem] bg-gray-600 border border-gray-500 rounded px-1 py-0.5 text-white"
                 />
               </div>
             )}

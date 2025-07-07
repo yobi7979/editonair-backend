@@ -1694,7 +1694,7 @@ export default function CanvasArea({
 
   return (
     <main 
-      className="flex-1 bg-gray-800 overflow-hidden p-4 flex items-center justify-center relative"
+      className="flex-1 bg-gray-800 overflow-hidden p-1 flex items-start justify-center relative"
       onDragOver={handleDragOver}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
@@ -1739,7 +1739,7 @@ export default function CanvasArea({
             position: "relative",
             left: 10,
             transform: `scale(${canvasScale})`,
-            transformOrigin: "left center",
+            transformOrigin: "left top",
             border: "2px solid rgb(55, 65, 81)",
           }}
         >

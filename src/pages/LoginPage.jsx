@@ -26,7 +26,7 @@ export default function LoginPage() {
         setError('');
 
         try {
-            const response = await fetch('/api/auth/login', {
+            const response = await fetch('https://editonair-backend-production.up.railway.app/api/auth/login', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -37,10 +37,10 @@ export default function LoginPage() {
             const data = await response.json();
 
             if (!response.ok) {
-                throw new Error(data.message || '로그인에 실패했습니다.');
+                throw new Error(data.error || '로그인에 실패했습니다.');
             }
 
-            // 토큰 저장
+            // 토큰 저장 (백엔드에서 token으로 반환)
             localStorage.setItem('token', data.token);
             
             // 메인 페이지로 이동

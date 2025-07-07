@@ -7,7 +7,6 @@ import PropertiesPanel from "./components/layout/PropertiesPanel";
 import ObjectAddPanel from "./components/layout/ObjectAddPanel";
 import ProjectSelectionModal from "./components/modals/ProjectSelectionModal";
 import LibraryPanel from "./components/layout/LibraryPanel";
-import ErrorBoundary from "./components/ErrorBoundary";
 import {
   getProject,
   createScene,
@@ -609,8 +608,12 @@ function App() {
       console.log('Updating object:', objectId, 'with data:', updatedObjectData);
       console.log('Full request data:', { objectId, propertyName, newValue, mappedPropertyName, updatedObjectData });
       await updateObject(apiBaseUrl, objectId, updatedObjectData);
-      // 서버 저장 성공 - 별도의 씬 데이터 재로드는 불필요
-      // (로컬 상태가 이미 업데이트되었고, 서버 저장도 성공했으므로)
+      // 서버 저장 후 최신 씬 데이터로 동기화
+      const response = await fetch(`${apiBaseUrl}/scenes/${selectedSceneId}`);
+      if (response.ok) {
+        const updatedScene = await response.json();
+        setScenes(prevScenes => prevScenes.map(scene => scene.id === selectedSceneId ? updatedScene : scene));
+      }
     } catch (err) {
       console.error('DB 업데이트 실패:', err);
       // 에러 발생 시 이전 상태로 되돌리기
@@ -866,49 +869,22 @@ function App() {
       // F5: 선택된 씬 송출(브라우저 새로고침 방지)
       if (event.key === 'F5') {
         event.preventDefault();
-        console.log('F5 key pressed for scene push, selectedSceneId:', selectedSceneId);
         if (selectedSceneId) {
-          const token = localStorage.getItem('token');
-          console.log('Token found for F5 push:', token ? 'Yes' : 'No');
-          
-          const headers = {
-            'Content-Type': 'application/json',
-          };
-          
-          if (token) {
-            headers['Authorization'] = `Bearer ${token}`;
-          }
-          
-          console.log('Making F5 push request to:', `${apiBaseUrl}/scenes/${selectedSceneId}/push`);
-          
           fetch(`${apiBaseUrl}/scenes/${selectedSceneId}/push`, {
             method: 'POST',
-            headers: headers,
+            headers: { 'Content-Type': 'application/json' },
           }).then(res => {
-            console.log('F5 push response status:', res.status);
             if (!res.ok) alert('씬 송출 실패');
-          }).catch((error) => {
-            console.error('F5 push error:', error);
-            alert('씬 송출 에러');
-          });
+          }).catch(() => alert('씬 송출 에러'));
         }
         return;
       }
       // F9: 송출 중인 씬 아웃
       if (event.key === 'F9') {
         if (selectedSceneId) {
-          const token = localStorage.getItem('token');
-          const headers = {
-            'Content-Type': 'application/json',
-          };
-          
-          if (token) {
-            headers['Authorization'] = `Bearer ${token}`;
-          }
-          
           fetch(`${apiBaseUrl}/scenes/${selectedSceneId}/out`, {
             method: 'POST',
-            headers: headers,
+            headers: { 'Content-Type': 'application/json' },
           }).then(res => {
             if (!res.ok) alert('씬 아웃 실패');
           }).catch(() => alert('씬 아웃 에러'));
@@ -1033,18 +1009,7 @@ function App() {
   // 씬 데이터 로드 함수
   const loadSceneData = async (sceneId) => {
     try {
-      const token = localStorage.getItem('token');
-      const headers = {
-        'Content-Type': 'application/json',
-      };
-      
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      
-      const response = await fetch(`${apiBaseUrl}/scenes/${sceneId}`, {
-        headers: headers,
-      });
+      const response = await fetch(`${apiBaseUrl}/scenes/${sceneId}`);
       if (!response.ok) {
         throw new Error('Failed to load scene');
       }
@@ -1236,8 +1201,7 @@ function App() {
   }
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden">
-    <ErrorBoundary>
+    <div className="flex flex-col h-screen bg-gray-800 text-white font-sans">
       <ProjectSelectionModal
         isOpen={isProjectModalOpen}
         onProjectSelect={handleProjectSelect}
@@ -1255,7 +1219,7 @@ function App() {
         currentProjectName={currentProjectName}
         onOpenProjectModal={() => setIsProjectModalOpen(true)}
       />
-      <div className="flex flex-1 overflow-hidden h-full">
+      <div className="flex flex-1 overflow-hidden">
         <Sidebar
           scenes={scenes}
           selectedSceneId={selectedSceneId}
@@ -1286,55 +1250,51 @@ function App() {
           isLibraryOpen={isLibraryOpen}
           libraryData={libraryData}
         />
-        <div className="flex-1 flex flex-col overflow-hidden h-full">
+        <div className="flex-1 flex flex-col overflow-hidden">
           {isLoadingScene ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-gray-400">씬 로딩 중...</div>
             </div>
           ) : (
-            <div className="flex-1 min-h-0 overflow-hidden">
-              <CanvasArea
-                selectedObject={selectedObject}
-                selectedObjectIds={selectedObjectIds}
-                onSelectObject={handleSelectObject}
-                onSelectObjects={handleSelectObjects}
-                key={selectedSceneId} // Force re-render on scene change
-                objects={selectedSceneObjects}
-                onUpdateObjectProperty={handleUpdateObjectProperty}
-                canvasScale={canvasScale}
-                onSetCanvasScale={setCanvasScale}
-                currentTime={currentTime}
-                isPlaying={isPlaying}
-                projectName={currentProjectName}
-                apiBaseUrl={apiBaseUrl}
-                onAddObject={handleAddObject}
-              />
-            </div>
-          )}
-          <div className="h-75 flex-shrink-0 border-t border-gray-700">
-            <Timeline
-              sceneObjects={selectedSceneObjects}
-              selectedObjectId={selectedObjectId}
+            <CanvasArea
+              selectedObject={selectedObject}
               selectedObjectIds={selectedObjectIds}
               onSelectObject={handleSelectObject}
               onSelectObjects={handleSelectObjects}
+              key={selectedSceneId} // Force re-render on scene change
+              objects={selectedSceneObjects}
               onUpdateObjectProperty={handleUpdateObjectProperty}
-              isPlaying={isPlaying}
-              setIsPlaying={setIsPlaying}
-              currentTime={currentTime}
-              setCurrentTime={setCurrentTime}
-              duration={duration}
-              setDuration={setDuration}
-              handleReorderObjects={handleReorderObjects}
-              selectedSceneId={selectedSceneId}
               canvasScale={canvasScale}
-              setCanvasScale={setCanvasScale}
+              onSetCanvasScale={setCanvasScale}
+              currentTime={currentTime}
+              isPlaying={isPlaying}
               projectName={currentProjectName}
               apiBaseUrl={apiBaseUrl}
               onAddObject={handleAddObject}
-              getServerBaseUrl={() => apiBaseUrl.replace('/api', '')}
             />
-          </div>
+          )}
+          <Timeline
+            sceneObjects={selectedSceneObjects}
+            selectedObjectId={selectedObjectId}
+            selectedObjectIds={selectedObjectIds}
+            onSelectObject={handleSelectObject}
+            onSelectObjects={handleSelectObjects}
+            onUpdateObjectProperty={handleUpdateObjectProperty}
+            isPlaying={isPlaying}
+            setIsPlaying={setIsPlaying}
+            currentTime={currentTime}
+            setCurrentTime={setCurrentTime}
+            duration={duration}
+            setDuration={setDuration}
+            handleReorderObjects={handleReorderObjects}
+            selectedSceneId={selectedSceneId}
+            canvasScale={canvasScale}
+            setCanvasScale={setCanvasScale}
+            projectName={currentProjectName}
+            apiBaseUrl={apiBaseUrl}
+            onAddObject={handleAddObject}
+            getServerBaseUrl={() => apiBaseUrl.replace('/api', '')}
+          />
         </div>
         <div className="relative">
           <PropertiesPanel
@@ -1343,7 +1303,6 @@ function App() {
           />
         </div>
       </div>
-    </ErrorBoundary>
     </div>
   );
 }

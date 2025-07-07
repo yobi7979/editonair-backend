@@ -468,8 +468,17 @@ export default function ObjectAddPanel({ onAddObject, selectedSceneId, currentPr
       const controller = new AbortController();
       uploadControllerRef.current = controller;
       const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000);
+      
+      // JWT 토큰 가져오기
+      const token = localStorage.getItem('token');
+      const headers = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
       const response = await fetch(`${apiBaseUrl}/projects/${projectName}/upload/sequence`, {
         method: 'POST',
+        headers,
         body: formData,
         signal: controller.signal,
       });
