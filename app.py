@@ -468,6 +468,15 @@ def create_project():
         user_id=user_id
     )
     db.session.add(project)
+    db.session.flush()  # ID를 얻기 위해 flush
+    
+    # 프로젝트 소유자 권한 추가
+    permission = ProjectPermission(
+        project_id=project.id,
+        user_id=user_id,
+        permission_type='owner'
+    )
+    db.session.add(permission)
     
     # 씬 생성
     if 'scenes' in data:
@@ -481,6 +490,12 @@ def create_project():
             
     try:
         db.session.commit()
+        
+        # 프로젝트 폴더 생성
+        project_folder = get_project_folder(project.name)
+        os.makedirs(os.path.join(project_folder, 'library', 'images'), exist_ok=True)
+        os.makedirs(os.path.join(project_folder, 'library', 'sequences'), exist_ok=True)
+        
         return jsonify({
             'id': project.id,
             'name': project.name,
