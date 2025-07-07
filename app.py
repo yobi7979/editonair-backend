@@ -2,57 +2,71 @@
 # ... existing code ...
 
 import os
+import json
+import re
+import shutil
+import io
+import socket
+from datetime import datetime, timedelta
+from functools import wraps
+from urllib.parse import unquote
+
 from flask import Flask, jsonify, request, render_template, send_from_directory, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO, emit, join_room, leave_room, disconnect
 from flask_jwt_extended import JWTManager, create_access_token, get_jwt_identity, jwt_required, decode_token
-import datetime
-import json
+from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
-from urllib.parse import unquote
 from PIL import Image
-import socket
-import re
-import shutil
-import io
-from functools import wraps
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 import bcrypt
-from datetime import datetime, timedelta
 import eventlet
+
 eventlet.monkey_patch()
 
 # Initialize Flask app
 app = Flask(__name__)
+CORS(app)
 
-# Configure database
-basedir = os.path.abspath(os.path.dirname(__file__))
-# PostgreSQL을 우선 사용하고, 없으면 SQLite 사용
-database_url = os.environ.get('DATABASE_URL')
-if database_url:
-    # Railway PostgreSQL URL을 SQLAlchemy 형식으로 변환
-    if database_url.startswith('postgres://'):
-        database_url = database_url.replace('postgres://', 'postgresql://', 1)
-    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-else:
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'editor_data.db')
+print("Starting application...")
 
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key')  # 프로덕션에서는 환경 변수 사용
+try:
+    # Configure database
+    basedir = os.path.abspath(os.path.dirname(__file__))
+    # PostgreSQL을 우선 사용하고, 없으면 SQLite 사용
+    database_url = os.environ.get('DATABASE_URL')
+    if database_url:
+        # Railway PostgreSQL URL을 SQLAlchemy 형식으로 변환
+        if database_url.startswith('postgres://'):
+            database_url = database_url.replace('postgres://', 'postgresql://', 1)
+        app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+        print(f"Using PostgreSQL database")
+    else:
+        app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'editor_data.db')
+        print(f"Using SQLite database: {app.config['SQLALCHEMY_DATABASE_URI']}")
 
-# Session configuration
-app.config['SESSION_TYPE'] = 'filesystem'
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=1)
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key')  # 프로덕션에서는 환경 변수 사용
 
-# JWT 설정
-app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'your-secret-key')  # 프로덕션에서는 환경 변수 사용
-app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=1)  # 토큰 만료 시간
+    # Session configuration
+    app.config['SESSION_TYPE'] = 'filesystem'
+    app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=1)
 
-# Initialize extensions
-db = SQLAlchemy(app)
-jwt = JWTManager(app)
-socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins="*")
+    # JWT 설정
+    app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'your-secret-key')  # 프로덕션에서는 환경 변수 사용
+    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=1)  # 토큰 만료 시간
+
+    # Initialize extensions
+    db = SQLAlchemy(app)
+    jwt = JWTManager(app)
+    socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins="*")
+
+    print("Database and extensions initialized successfully")
+
+except Exception as e:
+    print(f"Error during initialization: {e}")
+    raise
 
 # Global variable for tracking pushed scene
 current_pushed_scene_id = None

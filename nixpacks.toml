@@ -5,4 +5,4 @@ nixPkgs = ["python311", "python311Packages.pip", "gcc", "zlib", "libjpeg", "libp
 cmds = ["pip install --only-binary=:all: --no-cache-dir -r requirements.txt"]
 
 [start]
-cmd = "python app.py" 
+cmd = "python simple_app.py" 
