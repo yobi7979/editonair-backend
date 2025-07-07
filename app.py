@@ -29,24 +29,28 @@ monkey.patch_all()
 app = Flask(__name__)
 CORS(app, origins=["http://localhost:5173", "http://localhost:3000", "*"], supports_credentials=True)
 
+# 파일 업로드 관련 상수
+ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg', 'tiff'}
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+
 print("Starting application...")
 
 try:
-    # Configure database
-    basedir = os.path.abspath(os.path.dirname(__file__))
-    # PostgreSQL을 우선 사용하고, 없으면 SQLite 사용
-    database_url = os.environ.get('DATABASE_URL')
-    if database_url:
-        # Railway PostgreSQL URL을 SQLAlchemy 형식으로 변환
-        if database_url.startswith('postgres://'):
-            database_url = database_url.replace('postgres://', 'postgresql://', 1)
-        app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+# Configure database
+basedir = os.path.abspath(os.path.dirname(__file__))
+# PostgreSQL을 우선 사용하고, 없으면 SQLite 사용
+database_url = os.environ.get('DATABASE_URL')
+if database_url:
+    # Railway PostgreSQL URL을 SQLAlchemy 형식으로 변환
+    if database_url.startswith('postgres://'):
+        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
         print(f"Using PostgreSQL database")
-    else:
-        app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'editor_data.db')
+else:
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'editor_data.db')
         print(f"Using SQLite database: {app.config['SQLALCHEMY_DATABASE_URI']}")
 
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key')  # 프로덕션에서는 환경 변수 사용
 
     # Session configuration
@@ -58,7 +62,7 @@ try:
     app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=1)  # 토큰 만료 시간
 
     # Initialize extensions
-    db = SQLAlchemy(app)
+db = SQLAlchemy(app)
     jwt = JWTManager(app)
     socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent', allow_unsafe_werkzeug=True)
 
@@ -199,7 +203,7 @@ def get_project_folder(project_name, user_id=None):
         return os.path.join(basedir, '..', 'projects', f'user_{user_id}', folder)
     else:
         # 하위 호환성을 위해 user_id가 없으면 기존 방식 사용
-        return os.path.join(basedir, '..', 'projects', folder)
+    return os.path.join(basedir, '..', 'projects', folder)
 
 def get_current_user_from_token():
     """현재 인증된 사용자를 반환하는 헬퍼 함수"""
@@ -221,7 +225,7 @@ def get_project_by_name(project_name, user_id=None):
         ).first()
     else:
         # 하위 호환성을 위해 user_id가 없으면 기존 방식 사용
-        return Project.query.filter_by(name=project_name).first()
+    return Project.query.filter_by(name=project_name).first()
 
 def check_project_permission(user_id, project_id, required_permission):
     """사용자의 프로젝트 권한을 확인하는 헬퍼 함수"""
@@ -295,13 +299,13 @@ def project_to_dict(project):
             'name': scene.name,
             'order': scene.order,
             'objects': [{
-                'id': obj.id,
-                'name': obj.name,
-                'type': obj.type,
-                'order': obj.order,
-                'properties': json.loads(obj.properties) if obj.properties else {},
-                'in_motion': json.loads(obj.in_motion) if obj.in_motion else {},
-                'out_motion': json.loads(obj.out_motion) if obj.out_motion else {},
+        'id': obj.id,
+        'name': obj.name,
+        'type': obj.type,
+        'order': obj.order,
+        'properties': json.loads(obj.properties) if obj.properties else {},
+        'in_motion': json.loads(obj.in_motion) if obj.in_motion else {},
+        'out_motion': json.loads(obj.out_motion) if obj.out_motion else {},
                 'timing': json.loads(obj.timing) if obj.timing else {}
             } for obj in sorted(scene.objects, key=lambda x: x.order)]
         } for scene in sorted(project.scenes, key=lambda x: x.order)]
@@ -650,7 +654,7 @@ def handle_projects():
 
     if request.method == 'POST':
         try:
-            data = request.get_json()
+        data = request.get_json()
             new_project_name = data.get('name', 'Untitled Project').strip()
             
             # 프로젝트 이름 유효성 검사
@@ -664,30 +668,30 @@ def handle_projects():
             )
             db.session.add(new_project)
             db.session.flush()  # ID를 얻기 위해 flush
-            
-            initial_scenes_data = data.get('scenes', [])
-            for scene_data in initial_scenes_data:
-                new_scene = Scene(
-                    name=scene_data.get('name', 'Untitled Scene'),
-                    order=scene_data.get('order', 0),
-                    project=new_project
-                )
+        
+        initial_scenes_data = data.get('scenes', [])
+        for scene_data in initial_scenes_data:
+            new_scene = Scene(
+                name=scene_data.get('name', 'Untitled Scene'),
+                order=scene_data.get('order', 0),
+                project=new_project
+            )
                 db.session.add(new_scene)
                 db.session.flush()  # ID를 얻기 위해 flush
                 
-                initial_objects_data = scene_data.get('objects', [])
-                for i, obj_data in enumerate(initial_objects_data):
-                    new_object = Object(
-                        name=obj_data.get('name', 'New Object'),
-                        type=obj_data.get('type', 'text'),
-                        order=obj_data.get('order', i),
-                        properties=json.dumps(obj_data.get('properties', {})),
-                        in_motion=json.dumps(obj_data.get('in_motion', {})),
-                        out_motion=json.dumps(obj_data.get('out_motion', {})),
-                        timing=json.dumps(obj_data.get('timing', {})),
-                        scene=new_scene
-                    )
-                    db.session.add(new_object)
+            initial_objects_data = scene_data.get('objects', [])
+            for i, obj_data in enumerate(initial_objects_data):
+                new_object = Object(
+                    name=obj_data.get('name', 'New Object'),
+                    type=obj_data.get('type', 'text'),
+                    order=obj_data.get('order', i),
+                    properties=json.dumps(obj_data.get('properties', {})),
+                    in_motion=json.dumps(obj_data.get('in_motion', {})),
+                    out_motion=json.dumps(obj_data.get('out_motion', {})),
+                    timing=json.dumps(obj_data.get('timing', {})),
+                    scene=new_scene
+                )
+                db.session.add(new_object)
             
             # 프로젝트 소유자 권한 추가
             permission = ProjectPermission(
@@ -697,15 +701,15 @@ def handle_projects():
             )
             db.session.add(permission)
             
-            db.session.commit()
-            
+        db.session.commit()
+
             # 프로젝트 폴더 생성
             project_folder = get_project_folder(new_project_name, current_user.id)
             os.makedirs(os.path.join(project_folder, 'library', 'images'), exist_ok=True)
             os.makedirs(os.path.join(project_folder, 'library', 'sequences'), exist_ok=True)
-            
-            return jsonify(project_to_dict(new_project)), 201
-            
+
+        return jsonify(project_to_dict(new_project)), 201
+
         except Exception as e:
             db.session.rollback()
             app.logger.error(f"Error creating project: {str(e)}")
@@ -738,7 +742,7 @@ def handle_project_detail(project_name):
 
     if request.method == 'GET':
         return jsonify(project_to_dict(project))
-        
+
     elif request.method == 'PUT':
         # 편집 권한 확인
         if not check_project_permission(current_user.id, project.id, 'editor'):
@@ -791,7 +795,7 @@ def handle_project_share(project_name):
     
     if existing_permission:
         existing_permission.permission_type = data['permission_type']
-    else:
+                else:
         new_permission = ProjectPermission(
             project_id=project.id,
             user_id=share_user.id,
@@ -799,7 +803,7 @@ def handle_project_share(project_name):
         )
         db.session.add(new_permission)
         
-    db.session.commit()
+        db.session.commit()
     return jsonify({'message': 'Project shared successfully'})
 
 # Scene CRUD operations
@@ -1771,7 +1775,7 @@ def preload_project(project_name):
 
 if __name__ == '__main__':
     
-    with app.app_context():
+with app.app_context():
         db.create_all()  # 데이터베이스 테이블 생성
         
         # 기본 관리자 계정 생성
