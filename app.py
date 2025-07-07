@@ -1674,36 +1674,84 @@ def list_project_sequences(project_name):
 def serve_project_image(project_name, filename):
     # URL 디코딩
     decoded_filename = unquote(filename)
-    # 사용자 ID 없이 기본 폴더 구조 사용
-    project_folder = get_project_folder(project_name)
+    
+    # 프로젝트 정보를 가져와서 소유자 ID 확인
+    project = Project.query.filter_by(name=project_name).first()
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+    
+    # 프로젝트 소유자의 폴더 구조 사용
+    project_folder = get_project_folder(project_name, project.user_id)
     images_path = os.path.join(project_folder, 'library', 'images')
+    
+    # 파일이 존재하는지 확인
+    file_path = os.path.join(images_path, decoded_filename)
+    if not os.path.exists(file_path):
+        return jsonify({'error': 'File not found'}), 404
+    
     return send_from_directory(images_path, decoded_filename)
 
 @app.route('/projects/<project_name>/library/sequences/<path:sequence_and_filename>')
 def serve_project_sequence_frame(project_name, sequence_and_filename):
     # sequence_and_filename: '시퀀스명/프레임파일명.png'
     decoded_path = unquote(sequence_and_filename)
-    # 사용자 ID 없이 기본 폴더 구조 사용
-    project_folder = get_project_folder(project_name)
+    
+    # 프로젝트 정보를 가져와서 소유자 ID 확인
+    project = Project.query.filter_by(name=project_name).first()
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+    
+    # 프로젝트 소유자의 폴더 구조 사용
+    project_folder = get_project_folder(project_name, project.user_id)
     sequences_path = os.path.join(project_folder, 'library', 'sequences')
+    
+    # 파일이 존재하는지 확인
+    file_path = os.path.join(sequences_path, decoded_path)
+    if not os.path.exists(file_path):
+        return jsonify({'error': 'File not found'}), 404
+    
     return send_from_directory(sequences_path, decoded_path)
 
 @app.route('/projects/<project_name>/library/thumbnails/<path:filename>')
 def serve_project_thumbnail(project_name, filename):
     # URL 디코딩
     decoded_filename = unquote(filename)
-    # 사용자 ID 없이 기본 폴더 구조 사용
-    project_folder = get_project_folder(project_name)
+    
+    # 프로젝트 정보를 가져와서 소유자 ID 확인
+    project = Project.query.filter_by(name=project_name).first()
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+    
+    # 프로젝트 소유자의 폴더 구조 사용
+    project_folder = get_project_folder(project_name, project.user_id)
     thumbnails_path = os.path.join(project_folder, 'library', 'thumbnails')
+    
+    # 파일이 존재하는지 확인
+    file_path = os.path.join(thumbnails_path, decoded_filename)
+    if not os.path.exists(file_path):
+        return jsonify({'error': 'File not found'}), 404
+    
     return send_from_directory(thumbnails_path, decoded_filename)
 
 @app.route('/projects/<project_name>/library/sequence_thumbnails/<path:filename>')
 def serve_project_sequence_thumbnail(project_name, filename):
     # URL 디코딩
     decoded_filename = unquote(filename)
-    # 사용자 ID 없이 기본 폴더 구조 사용
-    project_folder = get_project_folder(project_name)
+    
+    # 프로젝트 정보를 가져와서 소유자 ID 확인
+    project = Project.query.filter_by(name=project_name).first()
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+    
+    # 프로젝트 소유자의 폴더 구조 사용
+    project_folder = get_project_folder(project_name, project.user_id)
     sequence_thumbnails_path = os.path.join(project_folder, 'library', 'sequence_thumbnails')
+    
+    # 파일이 존재하는지 확인
+    file_path = os.path.join(sequence_thumbnails_path, decoded_filename)
+    if not os.path.exists(file_path):
+        return jsonify({'error': 'File not found'}), 404
+    
     return send_from_directory(sequence_thumbnails_path, decoded_filename)
 
 @app.route('/api/projects/<project_name>/library/images/<filename>', methods=['DELETE'])
