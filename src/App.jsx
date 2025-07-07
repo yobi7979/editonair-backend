@@ -215,8 +215,10 @@ function App() {
       const sceneToUpdate = scenes.find(scene => scene.id === sceneId);
       if (!sceneToUpdate) return;
 
+      // id 필드를 제거하고 서버에 전송
+      const { id, ...sceneDataWithoutId } = sceneToUpdate;
       const updatedScene = await updateScene(apiBaseUrl, sceneId, {
-        ...sceneToUpdate,
+        ...sceneDataWithoutId,
         name: newName
       });
 

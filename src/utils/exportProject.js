@@ -44,18 +44,47 @@ export const exportProject = async (project, scenes, apiBaseUrl, onProgress) => 
         id: scene.id,
         name: scene.name,
         order: scene.order,
-        objects: scene.objects.map(obj => ({
-          id: obj.id,
-          name: obj.name,
-          type: obj.type,
-          order: obj.order,
-          properties: obj.properties,
-          in_motion: obj.in_motion,
-          out_motion: obj.out_motion,
-          timing: obj.timing,
-          created_at: obj.created_at,
-          updated_at: obj.updated_at
-        }))
+        objects: scene.objects.map(obj => {
+          // 이미지 객체의 src URL을 상대 경로로 정규화
+          if (obj.type === 'image' && obj.properties?.src) {
+            const normalizedObj = { ...obj };
+            normalizedObj.properties = { ...obj.properties };
+            
+            // 절대 URL에서 파일명만 추출
+            const urlParts = obj.properties.src.split('/');
+            const encodedFilename = urlParts[urlParts.length - 1];
+            const filename = decodeURIComponent(encodedFilename);
+            
+            // 상대 경로로 정규화
+            normalizedObj.properties.src = `./images/${filename}`;
+            
+            return {
+              id: normalizedObj.id,
+              name: normalizedObj.name,
+              type: normalizedObj.type,
+              order: normalizedObj.order,
+              properties: normalizedObj.properties,
+              in_motion: normalizedObj.in_motion,
+              out_motion: normalizedObj.out_motion,
+              timing: normalizedObj.timing,
+              created_at: normalizedObj.created_at,
+              updated_at: normalizedObj.updated_at
+            };
+          }
+          
+          return {
+            id: obj.id,
+            name: obj.name,
+            type: obj.type,
+            order: obj.order,
+            properties: obj.properties,
+            in_motion: obj.in_motion,
+            out_motion: obj.out_motion,
+            timing: obj.timing,
+            created_at: obj.created_at,
+            updated_at: obj.updated_at
+          };
+        })
       }))
     };
     
@@ -71,11 +100,18 @@ export const exportProject = async (project, scenes, apiBaseUrl, onProgress) => 
     const fileBaseUrl = baseUrl.replace('/api', '');
     console.log('파일 다운로드 base URL:', fileBaseUrl);
 
+    // JWT 토큰 가져오기
+    const token = localStorage.getItem('token');
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     // 이미지 목록 가져오기
     const imagesUrl = `${baseUrl}/projects/${encodeURIComponent(projectName)}/library/images`;
     console.log('이미지 목록 요청:', imagesUrl);
     
-    const imagesResponse = await fetch(imagesUrl);
+    const imagesResponse = await fetch(imagesUrl, { headers });
     console.log('이미지 목록 응답 상태:', imagesResponse.status, imagesResponse.statusText);
     
     if (!imagesResponse.ok) {
@@ -102,7 +138,7 @@ export const exportProject = async (project, scenes, apiBaseUrl, onProgress) => 
     const sequencesUrl = `${baseUrl}/projects/${encodeURIComponent(projectName)}/library/sequences`;
     console.log('시퀀스 목록 요청:', sequencesUrl);
     
-    const sequencesResponse = await fetch(sequencesUrl);
+    const sequencesResponse = await fetch(sequencesUrl, { headers });
     console.log('시퀀스 목록 응답 상태:', sequencesResponse.status, sequencesResponse.statusText);
     
     if (!sequencesResponse.ok) {
@@ -134,7 +170,7 @@ export const exportProject = async (project, scenes, apiBaseUrl, onProgress) => 
         const imageUrl = `${fileBaseUrl}/projects/${encodeURIComponent(projectName)}/library/images/${encodeURIComponent(imageName)}`;
         console.log('이미지 다운로드 시도:', imageUrl);
         
-        const response = await fetch(imageUrl);
+        const response = await fetch(imageUrl, { headers });
         if (!response.ok) {
           console.error(`이미지 다운로드 실패: ${imageName}, Status: ${response.status}`);
           if (onProgress) onProgress(`이미지 다운로드 실패: ${imageName}`);
@@ -164,7 +200,7 @@ export const exportProject = async (project, scenes, apiBaseUrl, onProgress) => 
         const spriteUrl = `${fileBaseUrl}/projects/${encodeURIComponent(projectName)}/library/sequences/${encodeURIComponent(sequence.name)}/sprite.png`;
         console.log('시퀀스 sprite 다운로드 시도:', spriteUrl);
         
-        const spriteResponse = await fetch(spriteUrl);
+        const spriteResponse = await fetch(spriteUrl, { headers });
         if (!spriteResponse.ok) {
           console.error(`sprite 다운로드 실패: ${sequence.name}, Status: ${spriteResponse.status}`);
           if (onProgress) onProgress(`sprite 다운로드 실패: ${sequence.name}`);
@@ -181,7 +217,7 @@ export const exportProject = async (project, scenes, apiBaseUrl, onProgress) => 
         const metaUrl = `${fileBaseUrl}/projects/${encodeURIComponent(projectName)}/library/sequences/${encodeURIComponent(sequence.name)}/meta.json`;
         console.log('시퀀스 meta 다운로드 시도:', metaUrl);
         
-        const metaResponse = await fetch(metaUrl);
+        const metaResponse = await fetch(metaUrl, { headers });
         if (!metaResponse.ok) {
           console.error(`meta.json 다운로드 실패: ${sequence.name}, Status: ${metaResponse.status}`);
           if (onProgress) onProgress(`meta.json 다운로드 실패: ${sequence.name}`);

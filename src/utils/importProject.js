@@ -147,7 +147,15 @@ export const addImportedScenesToCurrentProject = async (projectData, imageMap, s
     if (onProgress) onProgress('이미지 파일 업로드 중...');
     
     // 1. 현재 라이브러리의 이미지 목록 조회
-    const existingImagesResponse = await fetch(`${apiBaseUrl}/projects/${currentProjectName}/library/images`);
+    const token = localStorage.getItem('token');
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    const existingImagesResponse = await fetch(`${apiBaseUrl}/projects/${currentProjectName}/library/images`, {
+      headers
+    });
     if (!existingImagesResponse.ok) {
       throw new Error('기존 이미지 목록을 가져오는데 실패했습니다.');
     }
@@ -187,22 +195,27 @@ export const addImportedScenesToCurrentProject = async (projectData, imageMap, s
     // 3. 이미지 업로드
     if (imageFiles.length > 0) {
       console.log('업로드할 이미지 파일 목록:', imageFiles.map(f => f.name));
+      console.log('이미지 맵핑 정보:', Array.from(uploadedImageMap.entries()));
       const uploadResult = await uploadProjectImage(apiBaseUrl, currentProjectName, imageFiles, false);
       console.log('이미지 업로드 결과:', uploadResult);
     }
     
-    // 4. 업로드 후 이미지 목록 다시 조회
-    const updatedImagesResponse = await fetch(`${apiBaseUrl}/projects/${currentProjectName}/library/images`);
-    if (!updatedImagesResponse.ok) {
-      throw new Error('업데이트된 이미지 목록을 가져오는데 실패했습니다.');
-    }
-    const updatedImages = await updatedImagesResponse.json();
-    console.log('업데이트된 라이브러리 이미지 목록:', updatedImages);
+    // 4. 업로드 후 이미지 목록 다시 조회 (필요 시에만)
+    // const updatedImagesResponse = await fetch(`${apiBaseUrl}/projects/${currentProjectName}/library/images`, {
+    //   headers
+    // });
+    // if (!updatedImagesResponse.ok) {
+    //   throw new Error('업데이트된 이미지 목록을 가져오는데 실패했습니다.');
+    // }
+    // const updatedImages = await updatedImagesResponse.json();
+    // console.log('업데이트된 라이브러리 이미지 목록:', updatedImages);
     
     if (onProgress) onProgress('시퀀스 파일 업로드 중...');
     
-    // 2. 시퀀스 파일 업로드 전에 기존 시퀀스 목록 조회
-    const existingSequencesResponse = await fetch(`${apiBaseUrl}/projects/${currentProjectName}/library/sequences`);
+    // 시퀀스 파일 업로드 전에 기존 시퀀스 목록 조회
+    const existingSequencesResponse = await fetch(`${apiBaseUrl}/projects/${currentProjectName}/library/sequences`, {
+      headers
+    });
     if (!existingSequencesResponse.ok) {
       throw new Error('기존 시퀀스 목록을 가져오는데 실패했습니다.');
     }
@@ -225,8 +238,16 @@ export const addImportedScenesToCurrentProject = async (projectData, imageMap, s
         formData.append('meta', seqFiles.meta);
         formData.append('sequence_name', newSeqName);
         
+        // JWT 토큰 가져오기
+        const token = localStorage.getItem('token');
+        const headers = {};
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        
         const response = await fetch(`${apiBaseUrl}/projects/${currentProjectName}/upload/sequence`, {
           method: 'POST',
+          headers,
           body: formData
         });
         
@@ -241,30 +262,13 @@ export const addImportedScenesToCurrentProject = async (projectData, imageMap, s
     
     if (onProgress) onProgress('씬들을 현재 프로젝트에 추가 중...');
     
+    // 서버 기본 URL 생성 (API URL에서 /api 제거)
+    const serverBaseUrl = apiBaseUrl.replace('/api', '');
+    
     // 3. 씬들을 현재 프로젝트에 추가
     const createdScenes = [];
     for (const scene of projectData.scenes) {
       try {
-        // 씬의 객체들의 이미지 URL 업데이트
-        for (const obj of scene.objects) {
-          if (obj.type === 'image' && obj.properties?.src) {
-            const originalFileName = obj.properties.src.split('/').pop();
-            console.log('이미지 객체 처리:', originalFileName);
-            
-            // URL에서 프로젝트명 추출 및 교체
-            const urlParts = obj.properties.src.split('/');
-            const libraryIndex = urlParts.findIndex(part => part === 'library');
-            if (libraryIndex > 0) {
-              // library 직전의 프로젝트명을 현재 프로젝트명으로 교체
-              urlParts[libraryIndex - 1] = currentProjectName;
-              obj.properties.src = urlParts.join('/');
-              console.log('URL 업데이트됨:', obj.properties.src);
-            } else {
-              console.warn('올바른 URL 형식이 아님:', obj.properties.src);
-            }
-          }
-        }
-
         const newScene = await createScene(apiBaseUrl, currentProjectName, {
           name: scene.name,
           order: scene.order
@@ -274,22 +278,40 @@ export const addImportedScenesToCurrentProject = async (projectData, imageMap, s
         for (const obj of scene.objects) {
           // 이미지 객체인 경우 src 경로 업데이트
           if (obj.type === 'image' && obj.properties?.src) {
-            const imageName = obj.properties.src.split('/').pop();
-            console.log('씬 객체의 이미지 파일명:', imageName);
+            let originalImageName;
             
-            // 현재 프로젝트의 라이브러리에서 동일한 이름의 이미지 찾기
-            const matchingImage = updatedImages.find(img => img === imageName);
-            if (matchingImage) {
-              console.log('라이브러리에서 동일한 이름의 이미지 찾음:', matchingImage);
-              obj.properties.src = `/library/images/${matchingImage}`;
+            // 상대 경로인지 절대 URL인지 확인
+            if (obj.properties.src.startsWith('./images/')) {
+              // 상대 경로인 경우: "./images/filename.ext" 형태
+              originalImageName = obj.properties.src.replace('./images/', '');
+              console.log('상대 경로 이미지 파일명:', originalImageName);
             } else {
-              console.log('라이브러리에서 이미지를 찾지 못함:', imageName);
+              // 절대 URL인 경우: 기존 방식대로 처리
+              const encodedImageName = obj.properties.src.split('/').pop();
+              // URL 디코딩하여 원본 파일명 추출 (중복 인코딩 방지)
+              originalImageName = decodeURIComponent(encodedImageName);
+              console.log('절대 URL에서 추출한 이미지 파일명:', originalImageName);
             }
+            
+            // uploadedImageMap에서 실제 업로드된 이름 찾기
+            const uploadedImageName = uploadedImageMap.get(originalImageName) || originalImageName;
+            console.log('매핑된 이미지 이름:', uploadedImageName);
+            
+            // 절대 URL로 업데이트 (서버 기본 URL + 경로)
+            obj.properties.src = `${serverBaseUrl}/projects/${currentProjectName}/library/images/${encodeURIComponent(uploadedImageName)}`;
+            console.log('최종 이미지 URL:', obj.properties.src);
+          }
+          
+          // JWT 토큰 가져오기
+          const token = localStorage.getItem('token');
+          const headers = { 'Content-Type': 'application/json' };
+          if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
           }
           
           await fetch(`${apiBaseUrl}/scenes/${newScene.id}/objects`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify({
               name: obj.name,
               type: obj.type,

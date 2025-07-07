@@ -108,15 +108,14 @@ const RenderedObject = ({
   }
 
   const handleMouseDown = (e) => {
-    if (isLocked) return;
+    if (isLocked || !canvasRef.current) return;
+    
     e.preventDefault();
     e.stopPropagation();
-    setIsDragging(true);
-    dragDirectionRef.current = null;
 
-    const canvasRect = canvasRef.current?.getBoundingClientRect();
-    if (!canvasRect) return;
-
+    const canvasRect = canvasRef.current.getBoundingClientRect();
+    const { scaleX, scaleY } = getScale();
+    
     dragStartPosRef.current = {
       x: e.clientX - canvasRect.left,
       y: e.clientY - canvasRect.top,
@@ -125,6 +124,8 @@ const RenderedObject = ({
       x: object.properties?.x || 0,
       y: object.properties?.y || 0,
     };
+    setIsDragging(true);
+    dragDirectionRef.current = null;
   };
 
   const handleResizeStart = (e, handle) => {
@@ -232,10 +233,9 @@ const RenderedObject = ({
           if (isShiftPressed) {
             const totalDistance = Math.sqrt(virtualDeltaX * virtualDeltaX + virtualDeltaY * virtualDeltaY);
             
-            // 8px 이상 이동했을 때만 방향 결정 (더 엄격한 임계값)
+            // 8px 이상 이동했을 때만 방향 결정
             if (totalDistance > 8) {
               if (dragDirectionRef.current === null) {
-                // 방향이 아직 결정되지 않았다면 결정 (30도 기준으로 더 엄격하게)
                 const angle = Math.atan2(Math.abs(virtualDeltaY), Math.abs(virtualDeltaX)) * 180 / Math.PI;
                 dragDirectionRef.current = angle < 30 ? 'horizontal' : 'vertical';
               }
@@ -249,6 +249,7 @@ const RenderedObject = ({
             }
           }
 
+          // 복수 선택된 경우 모든 선택된 객체를 함께 이동
           if (objectRef.current) {
             objectRef.current.style.left = `${newX}px`;
             objectRef.current.style.top = `${newY}px`;
@@ -386,7 +387,6 @@ const RenderedObject = ({
       if (isDragging) {
         const finalMouseX = e.clientX - canvasRect.left;
         const finalMouseY = e.clientY - canvasRect.top;
-
         const deltaX = finalMouseX - dragStartPosRef.current.x;
         const deltaY = finalMouseY - dragStartPosRef.current.y;
 
@@ -394,38 +394,26 @@ const RenderedObject = ({
         const virtualDeltaX = deltaX / scaleX;
         const virtualDeltaY = deltaY / scaleY;
 
-        let newX = objectInitialPosRef.current.x + virtualDeltaX;
-        let newY = objectInitialPosRef.current.y + virtualDeltaY;
+        let finalX = objectInitialPosRef.current.x + virtualDeltaX;
+        let finalY = objectInitialPosRef.current.y + virtualDeltaY;
 
-        // Shift 키를 누른 상태에서는 직선 이동
-        if (isShiftPressed) {
-          const totalDistance = Math.sqrt(virtualDeltaX * virtualDeltaX + virtualDeltaY * virtualDeltaY);
-          
-          // 8px 이상 이동했을 때만 방향 결정 (더 엄격한 임계값)
-          if (totalDistance > 8) {
-            if (dragDirectionRef.current === null) {
-              // 방향이 아직 결정되지 않았다면 결정 (30도 기준으로 더 엄격하게)
-              const angle = Math.atan2(Math.abs(virtualDeltaY), Math.abs(virtualDeltaX)) * 180 / Math.PI;
-              dragDirectionRef.current = angle < 30 ? 'horizontal' : 'vertical';
-            }
-            
-            // 결정된 방향에 따라 이동 제한
-            if (dragDirectionRef.current === 'horizontal') {
-              newY = objectInitialPosRef.current.y;
-            } else {
-              newX = objectInitialPosRef.current.x;
-            }
+        // Shift 키 직선 이동 적용
+        if (isShiftPressed && dragDirectionRef.current) {
+          if (dragDirectionRef.current === 'horizontal') {
+            finalY = objectInitialPosRef.current.y;
+          } else {
+            finalX = objectInitialPosRef.current.x;
           }
         }
 
-        newX = Math.round(newX);
-        newY = Math.round(newY);
-
-        onUpdateObjectProperty(object.id, "properties", {
+        onUpdateObjectProperty(object.id, 'properties', {
           ...object.properties,
-          x: newX,
-          y: newY,
+          x: Math.round(finalX),
+          y: Math.round(finalY)
         });
+
+        setIsDragging(false);
+        dragDirectionRef.current = null;
       }
 
       if (isResizing) {
@@ -672,17 +660,20 @@ const RenderedObject = ({
   }
 
   const handleClick = (e) => {
-    if (isLocked) return;
+    if (isLocked || isDragging) return;
+
     e.preventDefault();
     e.stopPropagation();
 
     // 타임라인과 동일한 방식으로 CTRL 키 상태에 따라 선택 처리
     if (e.ctrlKey || e.metaKey) {
       // 다중 선택 추가/제거
-      onSelectObjects(object.id);
+      if (onSelectObjects) {
+        onSelectObjects(object.id);
+      }
     } else {
       // 단일 선택
-    onSelectObject(object.id);
+      onSelectObject(object.id);
     }
   };
 
@@ -1247,6 +1238,7 @@ const RenderedObject = ({
     <div
       ref={objectRef}
       className={`rendered-object ${isSelected ? 'selected' : ''}`}
+      data-object-id={object.id}
       style={{
         ...objectStyle,
         display: isVisible ? 'block' : 'none'
@@ -1499,6 +1491,7 @@ export default function CanvasArea({
   onAddObject,
 }) {
   const canvasRef = useRef(null);
+  const [dragOverCount, setDragOverCount] = useState(0);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -1691,6 +1684,14 @@ export default function CanvasArea({
       window.removeEventListener('keydown', handleShortcuts);
     };
   }, [selectedObjectIds, objects, isPlaying, onUpdateObjectProperty, onSelectObjects]);
+
+  // 캔버스 스케일 계산 함수
+  const getCanvasScale = useCallback(() => {
+    return {
+      scaleX: canvasScale || 0.6,
+      scaleY: canvasScale || 0.6
+    };
+  }, [canvasScale]);
 
   return (
     <main 

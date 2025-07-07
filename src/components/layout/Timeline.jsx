@@ -317,12 +317,14 @@ export default function Timeline({ sceneObjects = [], selectedObjectId, selected
 
   // 선택된 객체가 변경될 때 스크롤 조정
   React.useEffect(() => {
-    if (selectedObjectId && objectRefs.current[selectedObjectId]) {
-      const selectedElement = objectRefs.current[selectedObjectId];
-      selectedElement.scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest'
-      });
+    if (selectedObjectId) {
+      const selectedElement = document.querySelector(`[data-object-id="${selectedObjectId}"]`);
+      if (selectedElement) {
+        selectedElement.scrollIntoView({
+          behavior: 'smooth',
+          block: 'nearest'
+        });
+      }
     }
   }, [selectedObjectId]);
 
