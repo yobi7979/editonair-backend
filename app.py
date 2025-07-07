@@ -454,14 +454,13 @@ def handle_join(data):
 # --- Project API ---
 
 @app.route('/api/projects', methods=['POST'])
-# @jwt_required()  # 임시로 비활성화
+@jwt_required()
 def create_project():
     data = request.get_json()
     if not data or 'name' not in data:
         return jsonify({'message': 'Project name is required'}), 400
         
-    # user_id = get_jwt_identity()  # 임시로 비활성화
-    user_id = 1  # 임시로 admin 사용자 ID 사용
+    user_id = get_jwt_identity()
     
     # 프로젝트 생성
     project = Project(
@@ -499,12 +498,12 @@ def create_project():
         return jsonify({'message': 'Failed to create project'}), 500
 
 @app.route('/api/projects', methods=['GET'])
-# @jwt_required()  # 임시로 비활성화
+@jwt_required()
 def handle_projects():
-    # current_user = get_current_user_from_token()  # 임시로 비활성화
-    # if not current_user:
-    #     return jsonify({'error': 'Authentication required'}), 401
-    current_user = User.query.get(1)  # 임시로 admin 사용자 사용
+    current_user_id = get_jwt_identity()
+    current_user = User.query.get(current_user_id)
+    if not current_user:
+        return jsonify({'error': 'User not found'}), 404
 
     if request.method == 'POST':
         try:
@@ -578,11 +577,14 @@ def handle_projects():
             return jsonify({'error': 'Failed to fetch projects'}), 500
 
 @app.route('/api/projects/<project_name>', methods=['GET', 'PUT', 'DELETE'])
-# @auth_required('viewer')  # 임시로 비활성화
+@auth_required('viewer')
 def handle_project_detail(project_name):
-    # current_user = get_current_user_from_token()  # 임시로 비활성화
-    current_user = User.query.get(1)  # 임시로 admin 사용자 사용
+    current_user = get_current_user_from_token()
     project = get_project_by_name(project_name)
+    
+    # 프로젝트 접근 권한 확인
+    if not check_project_permission(current_user.id, project.id, 'viewer'):
+        return jsonify({'error': 'Permission denied'}), 403
 
     if request.method == 'GET':
         return jsonify(project_to_dict(project))
@@ -1345,11 +1347,16 @@ def upload_sequence(project_name):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/projects/<project_name>/library/images', methods=['GET'])
-# @auth_required('viewer')  # 임시로 비활성화
+@auth_required('viewer')
 def list_project_images(project_name):
+    current_user = get_current_user_from_token()
     project = get_project_by_name(project_name)
     if not project:
         return jsonify({'error': 'Project not found'}), 404
+    
+    # 프로젝트 접근 권한 확인
+    if not check_project_permission(current_user.id, project.id, 'viewer'):
+        return jsonify({'error': 'Permission denied'}), 403
     project_folder = get_project_folder(project_name)
     images_path = os.path.join(project_folder, 'library', 'images')
     if not os.path.exists(images_path):
@@ -1358,11 +1365,16 @@ def list_project_images(project_name):
     return jsonify(files)
 
 @app.route('/api/projects/<project_name>/library/sequences', methods=['GET'])
-# @auth_required('viewer')  # 임시로 비활성화
+@auth_required('viewer')
 def list_project_sequences(project_name):
+    current_user = get_current_user_from_token()
     project = get_project_by_name(project_name)
     if not project:
         return jsonify({'error': 'Project not found'}), 404
+    
+    # 프로젝트 접근 권한 확인
+    if not check_project_permission(current_user.id, project.id, 'viewer'):
+        return jsonify({'error': 'Permission denied'}), 403
     project_folder = get_project_folder(project_name)
     sequences_path = os.path.join(project_folder, 'library', 'sequences')
     if not os.path.exists(sequences_path):
