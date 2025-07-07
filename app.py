@@ -504,14 +504,15 @@ def handle_join(data):
         emit('error', {'message': 'Project name is required'})
         return
         
-    project = get_project_by_name(project_name, session.get('user_id'))
-    if not project:
-        emit('error', {'message': 'Project not found'})
-        return
-        
+    # WebSocket에서는 session에 user_id가 설정되어 있음 (authenticated_only 데코레이터에서)
     user_id = session.get('user_id')
     if not user_id:
         emit('error', {'message': 'Authentication required'})
+        return
+        
+    project = get_project_by_name(project_name, user_id)
+    if not project:
+        emit('error', {'message': 'Project not found'})
         return
         
     # 프로젝트 소유자는 자동으로 권한 부여
@@ -971,8 +972,8 @@ def overlay_project(project_name):
 
 @app.route('/overlay/project/<project_name>/scene/<int:scene_id>')
 def overlay_scene(project_name, scene_id):
-    # 오버레이 페이지는 인증 없이 접근 가능하므로 기존 방식 사용
-    project = get_project_by_name(project_name, session.get('user_id'))
+    # 오버레이 페이지는 인증 없이 접근 가능하므로 프로젝트 이름으로만 검색
+    project = Project.query.filter_by(name=project_name).first()
     if not project:
         return "Project not found", 404
     scene = Scene.query.get_or_404(scene_id)
@@ -1297,10 +1298,13 @@ def handle_scene_out(data):
 def handle_get_first_scene(data):
     project_name = data.get('project_name')
     if project_name:
-        project = get_project_by_name(project_name, session.get('user_id'))
-        if project and project.scenes:
-            first_scene = project.scenes[0]
-            emit('first_scene', scene_to_dict(first_scene))
+        # WebSocket에서는 session에 user_id가 설정되어 있음
+        user_id = session.get('user_id')
+        if user_id:
+            project = get_project_by_name(project_name, user_id)
+            if project and project.scenes:
+                first_scene = project.scenes[0]
+                emit('first_scene', scene_to_dict(first_scene))
 
 @app.route('/api/dummy-scene')
 def get_dummy_scene():
