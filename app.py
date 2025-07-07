@@ -278,14 +278,19 @@ def authenticated_only(f):
 @app.after_request
 def after_request(response):
     # 개발 환경과 프로덕션 환경 모두 허용
-    allowed_origins = ['http://localhost:5173', 'https://editonair-frontend.vercel.app']
-    origin = request.headers.get('Origin')
-    if origin in allowed_origins:
-        response.headers['Access-Control-Allow-Origin'] = origin
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
-    response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
-    response.headers['Access-Control-Allow-Credentials'] = 'true'
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
     return response
+
+@app.route('/health')
+def health_check():
+    """Health check endpoint for Railway"""
+    return jsonify({
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat()
+    }), 200
 
 # --- Authentication Routes ---
 
