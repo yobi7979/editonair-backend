@@ -89,6 +89,14 @@ class User(db.Model):
 
     def __repr__(self):
         return f'<User {self.username}>'
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'username': self.username,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'is_active': self.is_active
+        }
 
 class Project(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -209,6 +217,27 @@ def check_project_permission(user_id, project_id, required_permission):
     current_level = permission_levels.get(permission.permission_type, 0)
     
     return current_level >= required_level
+
+def scene_to_dict(scene):
+    """씬 객체를 딕셔너리로 변환하는 헬퍼 함수"""
+    return {
+        'id': scene.id,
+        'name': scene.name,
+        'order': scene.order,
+        'duration': scene.duration,
+        'created_at': scene.created_at.isoformat() if scene.created_at else None,
+        'updated_at': scene.updated_at.isoformat() if scene.updated_at else None,
+        'objects': [{
+            'id': obj.id,
+            'name': obj.name,
+            'type': obj.type,
+            'order': obj.order,
+            'properties': json.loads(obj.properties) if obj.properties else {},
+            'in_motion': json.loads(obj.in_motion) if obj.in_motion else {},
+            'out_motion': json.loads(obj.out_motion) if obj.out_motion else {},
+            'timing': json.loads(obj.timing) if obj.timing else {}
+        } for obj in sorted(scene.objects, key=lambda x: x.order)]
+    }
 
 def project_to_dict(project):
     """프로젝트 객체를 딕셔너리로 변환하는 헬퍼 함수"""
