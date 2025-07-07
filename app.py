@@ -299,13 +299,13 @@ def project_to_dict(project):
             'name': scene.name,
             'order': scene.order,
             'objects': [{
-                'id': obj.id,
-                'name': obj.name,
-                'type': obj.type,
-                'order': obj.order,
-                'properties': json.loads(obj.properties) if obj.properties else {},
-                'in_motion': json.loads(obj.in_motion) if obj.in_motion else {},
-                'out_motion': json.loads(obj.out_motion) if obj.out_motion else {},
+        'id': obj.id,
+        'name': obj.name,
+        'type': obj.type,
+        'order': obj.order,
+        'properties': json.loads(obj.properties) if obj.properties else {},
+        'in_motion': json.loads(obj.in_motion) if obj.in_motion else {},
+        'out_motion': json.loads(obj.out_motion) if obj.out_motion else {},
                 'timing': json.loads(obj.timing) if obj.timing else {}
             } for obj in sorted(scene.objects, key=lambda x: x.order)]
         } for scene in sorted(project.scenes, key=lambda x: x.order)]
@@ -1302,9 +1302,9 @@ def handle_get_first_scene(data):
         user_id = session.get('user_id')
         if user_id:
             project = get_project_by_name(project_name, user_id)
-            if project and project.scenes:
-                first_scene = project.scenes[0]
-                emit('first_scene', scene_to_dict(first_scene))
+        if project and project.scenes:
+            first_scene = project.scenes[0]
+            emit('first_scene', scene_to_dict(first_scene))
 
 @app.route('/api/dummy-scene')
 def get_dummy_scene():
