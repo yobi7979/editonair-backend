@@ -21,9 +21,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from PIL import Image
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 import bcrypt
-import eventlet
-
-eventlet.monkey_patch()
+import gevent
+from gevent import monkey
+monkey.patch_all()
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -60,7 +60,7 @@ try:
     # Initialize extensions
     db = SQLAlchemy(app)
     jwt = JWTManager(app)
-    socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins="*")
+    socketio = SocketIO(app, async_mode='gevent', cors_allowed_origins="*")
 
     print("Database and extensions initialized successfully")
 
@@ -1477,8 +1477,6 @@ def preload_project(project_name):
 # --- Main Entry Point ---
 
 if __name__ == '__main__':
-    import eventlet
-    eventlet.monkey_patch()
     
     with app.app_context():
         db.create_all()  # 데이터베이스 테이블 생성
