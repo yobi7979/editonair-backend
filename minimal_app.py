@@ -7,9 +7,6 @@ from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from flask_socketio import SocketIO, emit
 import bcrypt
-import eventlet
-
-eventlet.monkey_patch()
 
 app = Flask(__name__)
 
@@ -40,7 +37,7 @@ app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=1)
 # Initialize extensions
 db = SQLAlchemy(app)
 jwt = JWTManager(app)
-socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Database Models
 class User(db.Model):
@@ -226,9 +223,10 @@ def handle_connect():
 def handle_disconnect():
     print('Client disconnected')
 
-if __name__ == '__main__':
-    with app.app_context():
-        try:
+# Initialize database
+def init_db():
+    try:
+        with app.app_context():
             db.create_all()
             
             # Create default admin user
@@ -241,9 +239,14 @@ if __name__ == '__main__':
                 print("Default admin user created")
             
             print("Database tables created successfully")
-        except Exception as e:
-            print(f"Error creating database tables: {e}")
-    
+    except Exception as e:
+        print(f"Error creating database tables: {e}")
+
+if __name__ == '__main__':
+    init_db()
     port = int(os.environ.get('PORT', 5000))
     print(f"Starting app on port {port}")
-    socketio.run(app, debug=False, host='0.0.0.0', port=port) 
+    socketio.run(app, debug=False, host='0.0.0.0', port=port)
+else:
+    # Production mode (when imported by gunicorn, etc.)
+    init_db() 
