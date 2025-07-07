@@ -735,14 +735,26 @@ def create_scene(project_name):
     return jsonify(scene_to_dict(new_scene)), 201
 
 @app.route('/api/scenes/<int:scene_id>', methods=['GET', 'PUT'])
-@auth_required('viewer')
+@jwt_required()
 def handle_scene(scene_id):
+    current_user = get_current_user_from_token()
+    if not current_user:
+        return jsonify({'error': 'Authentication required'}), 401
+    
     scene = Scene.query.get_or_404(scene_id)
+    
+    # 씬의 프로젝트에 대한 권한 확인
+    if not check_project_permission(current_user.id, scene.project_id, 'viewer'):
+        return jsonify({'error': 'Permission denied'}), 403
     
     if request.method == 'GET':
         return jsonify(scene_to_dict(scene))
     
     elif request.method == 'PUT':
+        # 편집 권한 확인
+        if not check_project_permission(current_user.id, scene.project_id, 'editor'):
+            return jsonify({'error': 'Permission denied'}), 403
+            
         data = request.get_json()
         if not data or 'name' not in data:
             return jsonify({'error': 'Scene name is required'}), 400
@@ -792,9 +804,18 @@ def handle_scene(scene_id):
         return jsonify(scene_to_dict(scene))
 
 @app.route('/api/scenes/<int:scene_id>', methods=['DELETE'])
-@auth_required('editor')
+@jwt_required()
 def delete_scene(scene_id):
+    current_user = get_current_user_from_token()
+    if not current_user:
+        return jsonify({'error': 'Authentication required'}), 401
+    
     scene = Scene.query.get_or_404(scene_id)
+    
+    # 편집 권한 확인
+    if not check_project_permission(current_user.id, scene.project_id, 'editor'):
+        return jsonify({'error': 'Permission denied'}), 403
+    
     db.session.delete(scene)
     db.session.commit()
     return jsonify({'message': 'Scene deleted successfully'})
@@ -843,11 +864,20 @@ def overlay_scene(project_name, scene_id):
                          canvas_height=1080)
 
 @app.route('/api/scenes/<int:scene_id>/push', methods=['POST'])
-@auth_required('editor')
+@jwt_required()
 def push_scene(scene_id):
     try:
+        current_user = get_current_user_from_token()
+        if not current_user:
+            return jsonify({'error': 'Authentication required'}), 401
+        
         global current_pushed_scene_id
         scene = Scene.query.get_or_404(scene_id)
+        
+        # 편집 권한 확인
+        if not check_project_permission(current_user.id, scene.project_id, 'editor'):
+            return jsonify({'error': 'Permission denied'}), 403
+        
         current_pushed_scene_id = scene_id
         print(f"Scene {scene_id} pushed successfully")
         # broadcast 옵션 없이 emit
@@ -863,10 +893,19 @@ def push_scene(scene_id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/scenes/<int:scene_id>/out', methods=['POST'])
-@auth_required('editor')
+@jwt_required()
 def out_scene(scene_id):
     try:
+        current_user = get_current_user_from_token()
+        if not current_user:
+            return jsonify({'error': 'Authentication required'}), 401
+        
         scene = Scene.query.get_or_404(scene_id)
+        
+        # 편집 권한 확인
+        if not check_project_permission(current_user.id, scene.project_id, 'editor'):
+            return jsonify({'error': 'Permission denied'}), 403
+        
         print(f"Scene {scene_id} out successfully")
         # broadcast 옵션 없이 emit
         socketio.emit('scene_out', {
@@ -922,9 +961,18 @@ def get_user_by_email(email):
     return User.query.filter_by(email=email).first()
 
 @app.route('/api/scenes/<int:scene_id>/objects', methods=['POST'])
-@auth_required('editor')
+@jwt_required()
 def create_object(scene_id):
+    current_user = get_current_user_from_token()
+    if not current_user:
+        return jsonify({'error': 'Authentication required'}), 401
+    
     scene = Scene.query.get_or_404(scene_id)
+    
+    # 편집 권한 확인
+    if not check_project_permission(current_user.id, scene.project_id, 'editor'):
+        return jsonify({'error': 'Permission denied'}), 403
+    
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
@@ -949,10 +997,19 @@ def create_object(scene_id):
     return jsonify(object_to_dict(new_object)), 201
 
 @app.route('/api/objects/<int:object_id>', methods=['PUT'])
-@auth_required('editor')
+@jwt_required()
 def update_object(object_id):
     """Updates an existing object."""
+    current_user = get_current_user_from_token()
+    if not current_user:
+        return jsonify({'error': 'Authentication required'}), 401
+    
     obj = Object.query.get_or_404(object_id)
+    
+    # 편집 권한 확인
+    if not check_project_permission(current_user.id, obj.scene.project_id, 'editor'):
+        return jsonify({'error': 'Permission denied'}), 403
+    
     data = request.get_json()
 
     print(f"Received update request for object {object_id}:")
@@ -990,20 +1047,38 @@ def update_object(object_id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/objects/<int:object_id>', methods=['DELETE'])
-@auth_required('editor')
+@jwt_required()
 def delete_object(object_id):
     """Deletes an object."""
+    current_user = get_current_user_from_token()
+    if not current_user:
+        return jsonify({'error': 'Authentication required'}), 401
+    
     obj = Object.query.get_or_404(object_id)
+    
+    # 편집 권한 확인
+    if not check_project_permission(current_user.id, obj.scene.project_id, 'editor'):
+        return jsonify({'error': 'Permission denied'}), 403
+    
     db.session.delete(obj)
     db.session.commit()
     return jsonify({'message': 'Object deleted successfully'}), 200
 
 @app.route('/api/scenes/<int:scene_id>/object-orders', methods=['PUT'])
-@auth_required('editor')
+@jwt_required()
 def update_object_orders(scene_id):
     """Updates the order of multiple objects in a scene at once."""
     try:
+        current_user = get_current_user_from_token()
+        if not current_user:
+            return jsonify({'error': 'Authentication required'}), 401
+        
         scene = Scene.query.get_or_404(scene_id)
+        
+        # 편집 권한 확인
+        if not check_project_permission(current_user.id, scene.project_id, 'editor'):
+            return jsonify({'error': 'Permission denied'}), 403
+        
         data = request.get_json()
         if not data or 'objectOrders' not in data:
             return jsonify({'error': 'No objectOrders data provided'}), 400
