@@ -1,8 +1,8 @@
 [phases.setup]
-nixPkgs = ["python311", "python311Packages.pip", "gcc", "zlib", "libjpeg", "libpng", "freetype", "postgresql", "postgresql.dev"]
+nixPkgs = ["python310", "python310Packages.pip"]
 
 [phases.install]
-cmds = ["pip install --only-binary=:all: --no-cache-dir -r requirements.txt"]
+cmds = ["pip install --no-cache-dir -r requirements.txt"]
 
 [start]
 cmd = "python simple_app.py" 
