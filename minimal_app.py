@@ -12,7 +12,11 @@ import eventlet
 eventlet.monkey_patch()
 
 app = Flask(__name__)
-CORS(app)
+
+# CORS 설정 개선
+CORS(app, origins=['http://localhost:5173', 'http://localhost:3000'], 
+     allow_headers=['Content-Type', 'Authorization'],
+     methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
 
 print("Starting minimal EditOnAir backend...")
 
@@ -149,11 +153,10 @@ def register():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/projects', methods=['GET'])
-@jwt_required()
 def get_projects():
     try:
-        current_user_id = get_jwt_identity()
-        projects = Project.query.filter_by(user_id=current_user_id).all()
+        # 임시로 JWT 인증 제거 - 모든 프로젝트 반환
+        projects = Project.query.all()
         return jsonify([{
             'id': p.id,
             'name': p.name,
@@ -164,17 +167,25 @@ def get_projects():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/projects', methods=['POST'])
-@jwt_required()
 def create_project():
     try:
-        current_user_id = get_jwt_identity()
+        # 임시로 JWT 인증 제거 - 기본 사용자 ID 사용
+        default_user = User.query.filter_by(username='admin').first()
+        if not default_user:
+            return jsonify({'error': 'Default user not found'}), 500
+            
         data = request.get_json()
         name = data.get('name')
         
         if not name:
             return jsonify({'error': 'Project name required'}), 400
             
-        project = Project(name=name, user_id=current_user_id)
+        # 중복 체크
+        existing_project = Project.query.filter_by(name=name).first()
+        if existing_project:
+            return jsonify({'error': 'Project with this name already exists'}), 400
+            
+        project = Project(name=name, user_id=default_user.id)
         db.session.add(project)
         db.session.commit()
         
@@ -184,6 +195,24 @@ def create_project():
             'created_at': project.created_at.isoformat(),
             'updated_at': project.updated_at.isoformat()
         }), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/projects/<project_name>', methods=['DELETE'])
+def delete_project(project_name):
+    try:
+        # URL 디코딩 처리
+        import urllib.parse
+        decoded_name = urllib.parse.unquote(project_name)
+        
+        project = Project.query.filter_by(name=decoded_name).first()
+        if not project:
+            return jsonify({'error': 'Project not found'}), 404
+            
+        db.session.delete(project)
+        db.session.commit()
+        
+        return jsonify({'message': 'Project deleted successfully'}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
