@@ -1385,13 +1385,17 @@ def get_sequence_thumbnail_path(project_name, sequence_name):
 @auth_required('editor')
 def upload_image(project_name):
     try:
+        current_user = get_current_user_from_token()
+        if not current_user:
+            return jsonify({'error': 'Authentication required'}), 401
+            
         if 'file' not in request.files:
             return jsonify({'error': '파일이 없습니다.'}), 400
         
         files = request.files.getlist('file')
         overwrite = request.form.get('overwrite', 'false').lower() == 'true'
         
-        project_folder = get_project_folder(project_name, session.get('user_id'))
+        project_folder = get_project_folder(project_name, current_user.id)
         images_path = os.path.join(project_folder, 'library', 'images')
         os.makedirs(images_path, exist_ok=True)
         
@@ -1422,6 +1426,9 @@ def upload_image(project_name):
             'files': uploaded_files
         })
     except Exception as e:
+        print(f"이미지 업로드 오류: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
 def create_sprite_sheet(image_files, output_path):
@@ -1557,6 +1564,10 @@ def process_sequence_images(image_files, output_dir, sequence_name, options=None
 @auth_required('editor')
 def upload_sequence(project_name):
     try:
+        current_user = get_current_user_from_token()
+        if not current_user:
+            return jsonify({'error': 'Authentication required'}), 401
+            
         if 'sprite' not in request.files or 'meta' not in request.files:
             return jsonify({'error': '스프라이트와 메타 파일이 필요합니다.'}), 400
 
@@ -1571,7 +1582,7 @@ def upload_sequence(project_name):
         if not check_file_size(sprite_file) or not check_file_size(meta_file):
             return jsonify({'error': '파일이 너무 큽니다 (최대 50MB).'}), 400
 
-        project_folder = get_project_folder(project_name, session.get('user_id'))
+        project_folder = get_project_folder(project_name, current_user.id)
         sequence_folder = os.path.join(project_folder, 'library', 'sequences', sequence_name)
         
         # 폴더가 이미 존재하면 삭제
@@ -1609,6 +1620,8 @@ def upload_sequence(project_name):
         })
     except Exception as e:
         print(f"시퀀스 업로드 실패: {e}")
+        import traceback
+        print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/projects/<project_name>/library/images', methods=['GET'])
@@ -1657,7 +1670,8 @@ def list_project_sequences(project_name):
 def serve_project_image(project_name, filename):
     # URL 디코딩
     decoded_filename = unquote(filename)
-    project_folder = get_project_folder(project_name, session.get('user_id'))
+    # 사용자 ID 없이 기본 폴더 구조 사용
+    project_folder = get_project_folder(project_name)
     images_path = os.path.join(project_folder, 'library', 'images')
     return send_from_directory(images_path, decoded_filename)
 
@@ -1665,7 +1679,8 @@ def serve_project_image(project_name, filename):
 def serve_project_sequence_frame(project_name, sequence_and_filename):
     # sequence_and_filename: '시퀀스명/프레임파일명.png'
     decoded_path = unquote(sequence_and_filename)
-    project_folder = get_project_folder(project_name, session.get('user_id'))
+    # 사용자 ID 없이 기본 폴더 구조 사용
+    project_folder = get_project_folder(project_name)
     sequences_path = os.path.join(project_folder, 'library', 'sequences')
     return send_from_directory(sequences_path, decoded_path)
 
@@ -1707,8 +1722,12 @@ def delete_project_sequence(project_name, sequence_name):
 def preload_project(project_name):
     """프로젝트 데이터를 미리 로드하여 캐시"""
     try:
+        current_user = get_current_user_from_token()
+        if not current_user:
+            return jsonify({'error': 'Authentication required'}), 401
+            
         # 프로젝트 정보 가져오기
-        project = get_project_by_name(project_name, session.get('user_id'))
+        project = get_project_by_name(project_name, current_user.id)
         if not project:
             return jsonify({'error': 'Project not found'}), 404
         
@@ -1740,7 +1759,7 @@ def preload_project(project_name):
                 'name': project.name
             },
             'scenes': scene_data,
-            'timestamp': datetime.datetime.now().isoformat()
+            'timestamp': datetime.utcnow().isoformat()
         }
         
         return jsonify(preload_data)
