@@ -29,7 +29,7 @@ export default function Header({ project, scenes, setProject, setScenes, apiBase
     setProgressMsg('시작 중...');
     setProgressError('');
     try {
-      const result = await exportProject(project, scenes, msg => setProgressMsg(msg));
+      const result = await exportProject(project, scenes, apiBaseUrl, msg => setProgressMsg(msg));
       if (!result.success) {
         setProgressError(result.message);
       } else {

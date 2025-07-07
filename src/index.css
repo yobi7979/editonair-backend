@@ -74,6 +74,10 @@
   --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
   --sidebar-border: oklch(0.929 0.013 255.508);
   --sidebar-ring: oklch(0.704 0.04 256.788);
+  font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 .dark {
@@ -117,4 +121,31 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* 한글 입력 관련 전역 설정 */
+input, textarea {
+  ime-mode: auto !important;
+  -webkit-ime-mode: auto !important;
+  -moz-ime-mode: auto !important;
+  -ms-ime-mode: auto !important;
+}
+
+/* 입력 요소 특별 설정 */
+.ime-active {
+  ime-mode: active !important;
+  -webkit-ime-mode: active !important;
+  -moz-ime-mode: active !important;
+  -ms-ime-mode: active !important;
+  composition-mode: on !important;
+  -webkit-composition-mode: on !important;
+}
+
+/* 입력 요소 기본 스타일 */
+input[type="text"] {
+  word-break: keep-all;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  line-break: strict;
+  writing-mode: horizontal-tb !important;
 }

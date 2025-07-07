@@ -108,8 +108,10 @@ export const createScene = async (apiBaseUrl, projectId, sceneData) => {
 export const updateScene = async (apiBaseUrl, sceneId, sceneData) => {
   const response = await fetch(`${apiBaseUrl}/scenes/${sceneId}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(sceneData),
+    headers: {
+      "Content-Type": "application/json; charset=utf-8"
+    },
+    body: JSON.stringify(sceneData)
   });
   return handleResponse(response);
 };
@@ -201,7 +203,7 @@ export const updateObjectOrders = async (apiBaseUrl, sceneId, objectOrders) => {
 export const uploadProjectImage = async (apiBaseUrl, projectId, files, overwrite = false) => {
   const formData = new FormData();
   for (const file of files) {
-    formData.append('files', file);
+    formData.append('file', file);
   }
   if (overwrite) {
     formData.append('overwrite', 'true');

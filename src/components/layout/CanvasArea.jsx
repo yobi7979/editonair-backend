@@ -78,6 +78,13 @@ const RenderedObject = ({
     transform: `rotate(${object.properties?.rotation || 0}deg)`,
     transformOrigin: 'center center',
     ...object.properties,
+    // 모서리 둥글기 처리
+    ...(object.properties?.cornerRadius && {
+      borderTopLeftRadius: `${object.properties.cornerRadius.topLeft || 0}px`,
+      borderTopRightRadius: `${object.properties.cornerRadius.topRight || 0}px`,
+      borderBottomLeftRadius: `${object.properties.cornerRadius.bottomLeft || 0}px`,
+      borderBottomRightRadius: `${object.properties.cornerRadius.bottomRight || 0}px`,
+    }),
     ...effectStyle,
     ...(isSelected && {
       outline: '2px solid #3b82f6',
@@ -692,19 +699,58 @@ const RenderedObject = ({
           fontSize: typeof object.properties?.fontSize === 'number'
             ? `${object.properties.fontSize}px`
             : (object.properties?.fontSize || "24px"),
-          color: object.properties?.color || "#FFFFFF",
           fontFamily: object.properties?.fontFamily || "Arial",
           fontWeight: object.properties?.fontWeight || "normal",
           textAlign: object.properties?.textAlign || "left",
           width: "100%",
           minWidth: "50px",
-          whiteSpace: "pre-wrap", // 줄바꿈 유지
-          wordBreak: "break-word", // 단어 단위 줄바꿈
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
           lineHeight: object.properties?.lineHeight !== undefined ? object.properties.lineHeight : "1.2",
-          margin: 0, // 마진 제거
-          padding: 0, // 패딩 제거 (컨테이너에서 처리)
+          margin: 0,
+          padding: 0,
           letterSpacing: object.properties?.letterSpacing !== undefined ? `${object.properties.letterSpacing}px` : "0px",
+          display: 'inline',
         };
+
+        // 그라데이션 또는 단색 적용
+        let gradientDef = null;
+        if (object.properties?.fillType === 'gradient' && object.properties?.gradient) {
+          const { angle = 0, stops = [] } = object.properties.gradient;
+          const gradientId = `text-gradient-${object.id}`;
+          
+          // 그라데이션 각도 계산 (180도 보정)
+          const radians = ((angle - 180) * Math.PI) / 180;
+          const x1 = 50 + Math.cos(radians) * 50;
+          const y1 = 50 + Math.sin(radians) * 50;
+          const x2 = 50 + Math.cos(radians + Math.PI) * 50;
+          const y2 = 50 + Math.sin(radians + Math.PI) * 50;
+
+          gradientDef = (
+            <defs>
+              <linearGradient
+                id={gradientId}
+                x1={`${x1}%`}
+                y1={`${y1}%`}
+                x2={`${x2}%`}
+                y2={`${y2}%`}
+              >
+                {stops.map((stop, i) => (
+                  <stop
+                    key={i}
+                    offset={`${stop.position * 100}%`}
+                    stopColor={stop.color}
+                    stopOpacity={stop.opacity ?? 1}
+                  />
+                ))}
+              </linearGradient>
+            </defs>
+          );
+
+          textStyle.fill = `url(#${gradientId})`;
+        } else {
+          textStyle.fill = object.properties?.color || "#FFFFFF";
+        }
 
         // Apply text border if enabled
         if (object.properties?.useTextBorder) {
@@ -724,9 +770,10 @@ const RenderedObject = ({
           justifyContent: object.properties?.textAlign === "left" ? "flex-start" : 
                          object.properties?.textAlign === "right" ? "flex-end" : "center",
           width: "100%",
-          height: "100%", // 기즈모 전체 높이 사용
-          boxSizing: "border-box", // 패딩과 보더가 크기에 포함되도록
+          height: "100%",
+          boxSizing: "border-box",
           opacity: object.properties?.opacity !== undefined ? object.properties.opacity : 1,
+          background: 'none',
         };
 
         // Apply background styles if enabled
@@ -738,64 +785,69 @@ const RenderedObject = ({
 
         return (
           <div style={textContainerStyle}>
-            {isEditing ? (
-              <textarea
-                ref={editInputRef}
-                value={editText}
-                onChange={handleTextChange}
-                onBlur={handleTextBlur}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') {
-                    handleTextBlur(); // 편집 완료
-                  } else if (e.key === 'Enter') {
-                    // 엔터키 기본 동작 방지 (위로 올라가는 것 방지)
-                    e.preventDefault();
-                    // 줄바꿈 추가
-                    const cursorPosition = e.target.selectionStart;
-                    const textBefore = editText.substring(0, cursorPosition);
-                    const textAfter = editText.substring(cursorPosition);
-                    const newText = textBefore + '\n' + textAfter;
-                    setEditText(newText);
-                    
-                    // 커서 위치 조정 (줄바꿈 후 위치)
-                    setTimeout(() => {
-                      e.target.setSelectionRange(cursorPosition + 1, cursorPosition + 1);
-                    }, 0);
-                  }
-                }}
-                style={{
-                  ...textStyle,
-                  background: 'transparent',
-                  border: 'none',
-                  outline: 'none',
-                  padding: 0,
-                  margin: 0,
-                  width: '100%',
-                  height: '100%', // 컨테이너 전체 높이 사용
-                  minHeight: '1em', // 최소 높이 설정
-                  position: 'relative', // absolute에서 relative로 변경
-                  left: 'auto', // left 제거
-                  top: 'auto', // top 제거
-                  resize: 'none', // 크기 조절 비활성화
-                  overflow: 'hidden', // 스크롤바 숨김
-                  whiteSpace: 'pre-wrap', // 줄바꿈 유지
-                  wordBreak: 'break-word', // 단어 단위 줄바꿈
-                }}
-              />
-            ) : (
-              <div 
-                style={textStyle}
-                onDoubleClick={(e) => {
-                  e.stopPropagation();
-                  if (object.type === 'text') {
-                    setIsEditing(true);
-                    setEditText(object.properties?.content || '');
-                  }
-                }}
-              >
-                {object.properties?.content || "New Text"}
-              </div>
-            )}
+            <svg width="100%" height="100%" style={{ overflow: 'visible' }}>
+              {gradientDef}
+              {isEditing ? (
+                <foreignObject width="100%" height="100%">
+                  <textarea
+                    ref={editInputRef}
+                    value={editText}
+                    onChange={handleTextChange}
+                    onBlur={handleTextBlur}
+                    style={{
+                      ...textStyle,
+                      background: 'transparent',
+                      border: 'none',
+                      outline: 'none',
+                      padding: 0,
+                      margin: 0,
+                      width: '100%',
+                      height: '100%',
+                      minHeight: '1em',
+                      position: 'relative',
+                      left: 'auto',
+                      top: 'auto',
+                      resize: 'none',
+                      overflow: 'hidden',
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        handleTextBlur();
+                      } else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const cursorPosition = e.target.selectionStart;
+                        const textBefore = editText.substring(0, cursorPosition);
+                        const textAfter = editText.substring(cursorPosition);
+                        const newText = textBefore + '\n' + textAfter;
+                        setEditText(newText);
+                        setTimeout(() => {
+                          e.target.setSelectionRange(cursorPosition + 1, cursorPosition + 1);
+                        }, 0);
+                      }
+                    }}
+                  />
+                </foreignObject>
+              ) : (
+                <text
+                  style={textStyle}
+                  x="50%"
+                  y="50%"
+                  dominantBaseline="middle"
+                  textAnchor="middle"
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    if (object.type === 'text') {
+                      setIsEditing(true);
+                      setEditText(object.properties?.content || '');
+                    }
+                  }}
+                >
+                  {object.properties?.content || "New Text"}
+                </text>
+              )}
+            </svg>
           </div>
         );
       case "image":
@@ -1054,21 +1106,39 @@ const RenderedObject = ({
             );
           } else {
           // 사각형 (box)
+          const cornerRadius = object.properties?.cornerRadius || {
+            topLeft: 0,
+            topRight: 0,
+            bottomLeft: 0,
+            bottomRight: 0
+          };
+
+          // SVG path 생성
+          const path = [
+            `M${cornerRadius.topLeft},0`, // 시작점 (좌상단)
+            `h${width - cornerRadius.topLeft - cornerRadius.topRight}`, // 상단 가로선
+            `q${cornerRadius.topRight},0 ${cornerRadius.topRight},${cornerRadius.topRight}`, // 우상단 모서리
+            `v${height - cornerRadius.topRight - cornerRadius.bottomRight}`, // 우측 세로선
+            `q0,${cornerRadius.bottomRight} -${cornerRadius.bottomRight},${cornerRadius.bottomRight}`, // 우하단 모서리
+            `h-${width - cornerRadius.bottomRight - cornerRadius.bottomLeft}`, // 하단 가로선
+            `q-${cornerRadius.bottomLeft},0 -${cornerRadius.bottomLeft},-${cornerRadius.bottomLeft}`, // 좌하단 모서리
+            `v-${height - cornerRadius.bottomLeft - cornerRadius.topLeft}`, // 좌측 세로선
+            `q0,-${cornerRadius.topLeft} ${cornerRadius.topLeft},-${cornerRadius.topLeft}`, // 좌상단 모서리
+            'z' // 닫기
+          ].join(' ');
+
           shapeElement = (
-            <rect
-              x={0}
-              y={0}
-                width={width}
-                height={height}
-                  fill={fill}
-                  stroke={object.properties?.useShapeBorder ? (object.properties?.shapeBorderColor || '#FFFFFF') : 'none'}
-                  strokeWidth={object.properties?.useShapeBorder ? (object.properties?.shapeBorderWidth || 1) : 0}
-                  style={{
-                    filter: object.properties?.useShapeShadow ? `drop-shadow(${object.properties?.shapeShadowOffsetX||0}px ${object.properties?.shapeShadowOffsetY||0}px ${object.properties?.shapeShadowBlur||0}px ${object.properties?.shapeShadowColor||'#000'})` : undefined
-                  }}
-                />
-            );
-          }
+            <path
+              d={path}
+              fill={fill}
+              stroke={object.properties?.useShapeBorder ? (object.properties?.shapeBorderColor || '#FFFFFF') : 'none'}
+              strokeWidth={object.properties?.useShapeBorder ? (object.properties?.shapeBorderWidth || 1) : 0}
+              style={{
+                filter: object.properties?.useShapeShadow ? `drop-shadow(${object.properties?.shapeShadowOffsetX||0}px ${object.properties?.shapeShadowOffsetY||0}px ${object.properties?.shapeShadowBlur||0}px ${object.properties?.shapeShadowColor||'#000'})` : undefined
+              }}
+            />
+          );
+        }
         
         // 투명도 설정
         if (object.properties?.opacity !== undefined) {
@@ -1089,60 +1159,72 @@ const RenderedObject = ({
         );
       }
       case "timer":
-        // 오버레이와 동일하게 컨테이너에 배경, 내부에 텍스트 스타일 적용
-        const timerContainerStyle = {
-          display: "flex",
-          alignItems: "center",
-          justifyContent: object.properties?.textAlign === "left" ? "flex-start" : 
-                         object.properties?.textAlign === "right" ? "flex-end" : "center",
-          width: "100%",
-          height: "100%",
-          boxSizing: "border-box",
-          opacity: object.properties?.opacity !== undefined ? object.properties.opacity : 1,
-        };
-        const timerTextStyle = {
-          color: object.properties?.color || "#FFFFFF",
-          fontSize: typeof object.properties?.fontSize === 'number'
-            ? `${object.properties.fontSize}px`
-            : (object.properties?.fontSize || "48px"),
-          fontFamily: object.properties?.fontFamily || "Arial",
-          fontWeight: object.properties?.fontWeight || "bold",
-          textAlign: object.properties?.textAlign || "center",
-          lineHeight: object.properties?.lineHeight !== undefined ? object.properties.lineHeight : "1",
-          width: "100%",
-          margin: 0,
-          padding: 0,
-          letterSpacing: object.properties?.letterSpacing !== undefined ? `${object.properties.letterSpacing}px` : "0px",
-        };
-        // 타이머 동작(카운트다운/업) 구현
-        const [displayTime, setDisplayTime] = React.useState(object.properties?.duration || 60);
-        React.useEffect(() => {
-          if (!object.properties?.isRunning) return;
-          let timeLeft = object.properties?.duration || 60;
-          let timerInterval = setInterval(() => {
-            if (object.properties?.mode === 'countdown') {
-              timeLeft = timeLeft > 0 ? timeLeft - 1 : 0;
-            } else {
-              timeLeft = timeLeft + 1;
-            }
-            setDisplayTime(timeLeft);
-            if (object.properties?.mode === 'countdown' && timeLeft === 0) {
-              clearInterval(timerInterval);
-            }
-          }, 1000);
-          return () => clearInterval(timerInterval);
-        }, [object.properties?.isRunning, object.properties?.duration, object.properties?.mode]);
-        // 시간 포맷 변환
+        // 시간 포맷 변환 함수
         const formatTime = (seconds) => {
           const m = Math.floor(seconds / 60);
-          const s = seconds % 60;
+          const s = Math.floor(seconds % 60);
           return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
         };
+
+        const timerStyle = {
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: object.properties?.textAlign || 'center',
+          fontFamily: object.properties?.fontFamily || 'Arial',
+          fontSize: `${object.properties?.fontSize || 48}px`,
+          fontWeight: object.properties?.fontWeight || 'bold',
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
+        };
+
+        const gradientId = `timer-gradient-${object.id}`;
+        const gradientAngle = object.properties?.fillType === 'gradient' ? (object.properties?.gradient?.angle || 0) - 180 : 0;
+        const radians = (gradientAngle * Math.PI) / 180;
+        const x1 = 50 + Math.cos(radians) * 50;
+        const y1 = 50 + Math.sin(radians) * 50;
+        const x2 = 50 + Math.cos(radians + Math.PI) * 50;
+        const y2 = 50 + Math.sin(radians + Math.PI) * 50;
+        const gradientStops = object.properties?.gradient?.stops || [
+          { color: '#FF0000', opacity: 1, position: 0 },
+          { color: '#0000FF', opacity: 1, position: 1 }
+        ];
+
         return (
-          <div style={timerContainerStyle}>
-            <div style={timerTextStyle}>
-              {formatTime(displayTime)}
-            </div>
+          <div style={timerStyle}>
+            <svg width="100%" height="100%" style={{ overflow: 'visible' }}>
+              <defs>
+                {object.properties?.fillType === 'gradient' && (
+                  <linearGradient
+                    id={gradientId}
+                    x1={`${x1}%`}
+                    y1={`${y1}%`}
+                    x2={`${x2}%`}
+                    y2={`${y2}%`}
+                  >
+                    {gradientStops.map((stop, index) => (
+                      <stop
+                        key={index}
+                        offset={`${stop.position * 100}%`}
+                        stopColor={stop.color}
+                        stopOpacity={stop.opacity}
+                      />
+                    ))}
+                  </linearGradient>
+                )}
+              </defs>
+              <text
+                x="50%"
+                y="50%"
+                dominantBaseline="middle"
+                textAnchor={object.properties?.textAlign === 'left' ? 'start' : object.properties?.textAlign === 'right' ? 'end' : 'middle'}
+                fill={object.properties?.fillType === 'gradient' ? `url(#${gradientId})` : object.properties?.color || '#FFFFFF'}
+                fillOpacity={object.properties?.fillType === 'gradient' ? 1 : object.properties?.opacity ?? 1}
+              >
+                {formatTime(currentTime)}
+              </text>
+            </svg>
           </div>
         );
       default:
@@ -1532,25 +1614,83 @@ export default function CanvasArea({
 
   useEffect(() => {
     const handleArrowKeyMove = (e) => {
-      if (!selectedObject) return;
-      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+      // input이나 textarea에 포커스가 있으면 키보드 이벤트 무시
+      if (document.activeElement.tagName === 'INPUT' || 
+          document.activeElement.tagName === 'TEXTAREA') {
+        return;
+      }
+
+      // 선택된 객체가 없거나 플레이 중이면 무시
+      if (!selectedObjectIds.length || isPlaying) return;
+
+      // 방향키가 아니면 무시
+      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+        return;
+      }
+
+      e.preventDefault(); // 스크롤 방지
+
+      const step = e.shiftKey ? 10 : 1;
+      let deltaX = 0;
+      let deltaY = 0;
+
+      switch (e.key) {
+        case 'ArrowLeft':
+          deltaX = -step;
+          break;
+        case 'ArrowRight':
+          deltaX = step;
+          break;
+        case 'ArrowUp':
+          deltaY = -step;
+          break;
+        case 'ArrowDown':
+          deltaY = step;
+          break;
+      }
+
+      // 선택된 모든 객체 이동
+      selectedObjectIds.forEach(id => {
+        const obj = objects.find(o => o.id === id);
+        if (obj) {
+          onUpdateObjectProperty(id, 'properties', {
+            ...obj.properties,
+            x: (obj.properties?.x || 0) + deltaX,
+            y: (obj.properties?.y || 0) + deltaY
+          });
+        }
+      });
+    };
+
+    // 단축키 이벤트 핸들러
+    const handleShortcuts = (e) => {
+      // input이나 textarea에 포커스가 있으면 단축키 무시
+      if (document.activeElement.tagName === 'INPUT' || 
+          document.activeElement.tagName === 'TEXTAREA') {
+        return;
+      }
+
+      // Delete 키로 객체 삭제
+      if (e.key === 'Delete' && selectedObjectIds.length) {
         e.preventDefault();
-        const step = e.shiftKey ? 10 : 1;
-        let dx = 0, dy = 0;
-        if (e.key === "ArrowUp") dy = -step;
-        if (e.key === "ArrowDown") dy = step;
-        if (e.key === "ArrowLeft") dx = -step;
-        if (e.key === "ArrowRight") dx = step;
-        onUpdateObjectProperty(selectedObject.id, "properties", {
-          ...selectedObject.properties,
-          x: (selectedObject.properties.x || 0) + dx,
-          y: (selectedObject.properties.y || 0) + dy,
-        });
+        // 삭제 로직...
+      }
+
+      // Ctrl + A로 전체 선택
+      if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        onSelectObjects(objects.map(obj => obj.id));
       }
     };
-    window.addEventListener("keydown", handleArrowKeyMove);
-    return () => window.removeEventListener("keydown", handleArrowKeyMove);
-  }, [selectedObject, onUpdateObjectProperty]);
+
+    window.addEventListener('keydown', handleArrowKeyMove);
+    window.addEventListener('keydown', handleShortcuts);
+
+    return () => {
+      window.removeEventListener('keydown', handleArrowKeyMove);
+      window.removeEventListener('keydown', handleShortcuts);
+    };
+  }, [selectedObjectIds, objects, isPlaying, onUpdateObjectProperty, onSelectObjects]);
 
   return (
     <main 

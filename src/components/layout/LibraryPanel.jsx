@@ -166,7 +166,15 @@ export default function LibraryPanel({
                   onDoubleClick={() => setTimeout(() => handleImageDoubleClick(img), 0)}
                   title={img}
                 >
-                  <img src={`${getServerBaseUrl()}/projects/${projectName}/library/images/${encodeURIComponent(img)}`} alt={img} className="w-7 h-7 object-contain rounded bg-gray-900" />
+                  <img 
+                    src={`${getServerBaseUrl()}/projects/${projectName}/library/thumbnails/${encodeURIComponent(img.replace(/\.[^/.]+$/, '.webp'))}`} 
+                    alt={img} 
+                    className="w-7 h-7 object-contain rounded bg-gray-900"
+                    onError={(e) => {
+                      // 썸네일 로드 실패시 원본 이미지로 대체
+                      e.target.src = `${getServerBaseUrl()}/projects/${projectName}/library/images/${encodeURIComponent(img)}`;
+                    }}
+                  />
                   <div className="w-full text-[8px] text-gray-400 text-center truncate mt-0.5">{img}</div>
                 </div>
               ))}
@@ -182,7 +190,7 @@ export default function LibraryPanel({
             <div className="grid grid-cols-8 gap-1">
               {sequences.length === 0 && <div className="col-span-8 text-xs text-gray-400 text-center py-8">시퀀스가 없습니다.</div>}
               {sequences.map((seq) => {
-                const thumbnailUrl = `${getServerBaseUrl()}/projects/${projectName}/library/sequences/${encodeURIComponent(seq.name)}/sprite.png`;
+                const thumbnailUrl = `${getServerBaseUrl()}/projects/${projectName}/library/sequence_thumbnails/${encodeURIComponent(seq.name)}.webp`;
                 return (
                   <div key={seq.name} className={`relative group border border-gray-800 rounded-lg p-0.5 flex flex-col items-center cursor-pointer select-none transition-all ${selectedSequences.includes(seq.name) ? 'ring-2 ring-indigo-400 bg-gray-800' : 'hover:bg-gray-700'}`}
                     onClick={(e) => {
@@ -203,7 +211,18 @@ export default function LibraryPanel({
                     onDoubleClick={() => setTimeout(() => handleSequenceDoubleClick(seq), 0)}
                     title={seq.name}
                   >
-                    <img src={thumbnailUrl} alt={seq.name} className="w-7 h-7 object-cover rounded bg-gray-900" onError={e => { e.target.onerror = null; e.target.src = 'https://via.placeholder.com/150/222/FFF?text=Error'; }} />
+                    <img 
+                      src={thumbnailUrl} 
+                      alt={seq.name} 
+                      className="w-7 h-7 object-cover rounded bg-gray-900" 
+                      onError={(e) => {
+                        // 썸네일 로드 실패시 스프라이트 이미지로 대체
+                        e.target.src = `${getServerBaseUrl()}/projects/${projectName}/library/sequences/${encodeURIComponent(seq.name)}/sprite.png`;
+                        e.target.onerror = () => {
+                          e.target.src = 'https://via.placeholder.com/150/222/FFF?text=Error';
+                        };
+                      }} 
+                    />
                     <div className="w-full text-[8px] text-gray-400 text-center truncate mt-0.5">{seq.name}</div>
                   </div>
                 );

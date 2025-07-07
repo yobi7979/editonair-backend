@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Film, PlusCircle, Trash2, FileEdit, Save, CheckCircle2, AlertCircle, Circle, Radio, LogOut, ClipboardCopy, GripVertical } from 'lucide-react';
 import {
   DndContext,
@@ -14,6 +14,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import RenameDialog from '../modals/RenameDialog';
 
 export default function Sidebar({ scenes, selectedSceneId, setSelectedSceneId, updateProjectOrder, onSelectScene, onAddScene, onRenameScene, onDeleteScene, onSaveScene, hasUnsavedChanges, selectedObjectId, onSelectObject, onUpdateObjectProperty, apiBaseUrl }) {
   const [editingSceneId, setEditingSceneId] = useState(null);
@@ -55,30 +56,24 @@ export default function Sidebar({ scenes, selectedSceneId, setSelectedSceneId, u
     setApiLogs([]);
   };
 
+  const [savingSceneId, setSavingSceneId] = useState(null);
+  const [unsavedScenes, setUnsavedScenes] = useState(new Set());
+
+  const handleSceneChange = (sceneId) => {
+    setUnsavedScenes(prev => new Set(prev).add(sceneId));
+  };
+
   const handleSaveScene = async (sceneId) => {
-    setSaveStatus(prev => ({ ...prev, [sceneId]: 'saving' }));
-    try {
-      await onSaveScene(sceneId);
-      setSaveStatus(prev => ({ ...prev, [sceneId]: 'saved' }));
-      // 3초 후 저장 상태 메시지 제거
-      setTimeout(() => {
-        setSaveStatus(prev => {
-          const newStatus = { ...prev };
-          delete newStatus[sceneId];
-          return newStatus;
-        });
-      }, 3000);
-    } catch (error) {
-      setSaveStatus(prev => ({ ...prev, [sceneId]: 'error' }));
-      // 5초 후 에러 상태 메시지 제거
-      setTimeout(() => {
-        setSaveStatus(prev => {
-          const newStatus = { ...prev };
-          delete newStatus[sceneId];
-          return newStatus;
-        });
-      }, 5000);
-    }
+    setSavingSceneId(sceneId);
+    await onSaveScene(sceneId);
+    setUnsavedScenes(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(sceneId);
+      return newSet;
+    });
+    setTimeout(() => {
+      setSavingSceneId(null);
+    }, 500);
   };
 
   const handleCopyUrl = (url) => {
@@ -202,6 +197,43 @@ export default function Sidebar({ scenes, selectedSceneId, setSelectedSceneId, u
     );
   }
 
+  const [isComposing, setIsComposing] = useState(false);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (editingSceneId && inputRef.current) {
+      inputRef.current.value = editText;
+    }
+  }, [editingSceneId, editText]);
+
+  const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
+  const [sceneToRename, setSceneToRename] = useState(null);
+  const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
+  const lastClickTime = useRef(0);
+
+  const handleSceneClick = (scene, event) => {
+    const currentTime = new Date().getTime();
+    const timeDiff = currentTime - lastClickTime.current;
+
+    if (scene.id === selectedSceneId && timeDiff < 200) {
+      // 이미 선택된 씬에서만 더블클릭 처리
+      const rect = event.currentTarget.getBoundingClientRect();
+      setPopupPosition({
+        x: rect.left,
+        y: rect.bottom + 5
+      });
+      setSceneToRename(scene);
+      setIsRenameDialogOpen(true);
+    } else {
+      // 첫 번째 클릭 - 씬 선택
+      if (editingSceneId !== scene.id) {
+        onSelectScene(scene.id);
+      }
+    }
+
+    lastClickTime.current = currentTime;
+  };
+
   return (
     <aside className="bg-gray-800 text-gray-300 w-72 p-4 flex flex-col shadow-lg space-y-4">
       <div className="flex items-center justify-between pb-2 border-b border-gray-700">
@@ -226,12 +258,18 @@ export default function Sidebar({ scenes, selectedSceneId, setSelectedSceneId, u
               <SortableSceneItem key={scene.id} scene={scene}>
                 {({ attributes, listeners }) => (
                 <div
-                  className={`flex items-center justify-between p-2 rounded-md cursor-pointer transition-colors \
-                        ${scene.id === selectedSceneId 
-                          ? 'bg-indigo-600 text-white'
-                          : 'hover:bg-gray-700/70'
-                        }`}
-          >
+                  className={`flex items-center w-full justify-between p-2 rounded-md transition-colors ${
+                    savingSceneId === scene.id 
+                      ? 'bg-green-500/20' 
+                      : scene.id === selectedSceneId 
+                        ? 'bg-indigo-600 text-white' 
+                        : 'hover:bg-gray-700/70'
+                  } ${
+                    scene.id !== selectedSceneId && unsavedScenes.has(scene.id)
+                      ? 'text-red-500'
+                      : ''
+                  }`}
+                >
                     {/* 드래그 핸들 */}
                     <button 
                       {...attributes} 
@@ -240,53 +278,52 @@ export default function Sidebar({ scenes, selectedSceneId, setSelectedSceneId, u
                       style={{ pointerEvents: 'auto', zIndex: 2 }}
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <GripVertical size={14} />
+                      <GripVertical size={14} className="flex-shrink-0 text-gray-500 hover:text-gray-400 cursor-grab active:cursor-grabbing" />
                     </button>
                     {/* 씬 이름 영역 - 더블클릭만 편집 진입 */}
                     <div 
-                      className="flex items-center flex-1 select-none"
-                      onClick={() => { if (editingSceneId !== scene.id) onSelectScene(scene.id); }}
-                      onDoubleClick={(e) => {
-                        e.stopPropagation();
-                        setEditingSceneId(scene.id);
-                        setEditText(scene.name);
-                      }}
+                      className="flex items-center w-full justify-between"
+                      onClick={(e) => handleSceneClick(scene, e)}
                       style={{ cursor: 'pointer', userSelect: 'none', zIndex: 1 }}
                     >
-              <Film size={16} className="mr-2 flex-shrink-0" />
-              {editingSceneId === scene.id ? (
-                <input 
-                  type="text"
-                  value={editText}
-                  onChange={(e) => setEditText(e.target.value)}
-                  onBlur={() => {
-                    if (editText.trim()) onRenameScene(scene.id, editText);
-                    setEditingSceneId(null);
+              <div className="flex items-center min-w-0">
+                <span 
+                  className={`text-[13px] cursor-pointer ml-0.5 ${
+                    scene.id === selectedSceneId 
+                      ? 'text-white font-medium' 
+                      : hasUnsavedChanges[scene.id]
+                        ? 'text-yellow-500'
+                        : 'text-gray-400'
+                  }`}
+                  title={scene.name}
+                  onClick={(e) => handleSceneClick(scene, e)}
+                >
+                  {scene.name.length > 6 ? `${scene.name.slice(0, 6)}...` : scene.name}
+                </span>
+              </div>
+              <div className="flex items-center gap-0.5 ml-auto">
+                {/* 기존 버튼들을 이 div 안으로 이동 */}
+                <button
+                  className="p-1 rounded hover:bg-gray-700/50 text-gray-400 hover:text-white"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSaveScene(scene.id);
                   }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      if (editText.trim()) onRenameScene(scene.id, editText);
-                      setEditingSceneId(null);
-                      e.preventDefault();
-                    }
-                    if (e.key === 'Escape') {
-                      setEditingSceneId(null);
-                    }
+                  title="저장"
+                >
+                  <Save size={14} />
+                </button>
+                <button
+                  className="p-1 rounded hover:bg-gray-700/50 text-gray-400 hover:text-white"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteScene(scene.id);
                   }}
-                  className="bg-gray-600 text-white text-sm px-1 py-0.5 rounded-sm w-full focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  autoFocus
-                          onClick={(e) => e.stopPropagation()}
-                />
-              ) : (
-                        <div 
-                          className="flex items-center flex-1"
-                        >
-                  <span className="text-sm truncate" title={scene.name}>{scene.name}</span>
-                  {hasUnsavedChanges[scene.id] && (
-                    <Circle size={8} className="ml-2 text-yellow-500" />
-                  )}
-                </div>
-              )}
+                  title="삭제"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
             </div>
             <div className="flex items-center ml-auto pl-2 space-x-1">
               {/* Save Status Indicator */}
@@ -328,32 +365,6 @@ export default function Sidebar({ scenes, selectedSceneId, setSelectedSceneId, u
                 }`}
               >
                 <LogOut size={14} />
-              </button>
-              {/* Save Button */}
-              <button 
-                title="Save Scene"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleSaveScene(scene.id);
-                }}
-                className={`p-1 rounded hover:bg-green-500/80 text-gray-400 hover:text-white ${
-                  hasUnsavedChanges[scene.id] ? 'text-yellow-500' : ''
-                }`}
-              >
-                <Save size={14} />
-              </button>
-              {/* Delete Button */}
-              <button 
-                title="Delete Scene"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (window.confirm(`Are you sure you want to delete scene "${scene.name}"?`)) {
-                    onDeleteScene(scene.id);
-                  }
-                }}
-                className="p-1 rounded hover:bg-red-500/80 text-gray-400 hover:text-white"
-              >
-                <Trash2 size={14} />
               </button>
             </div>
           </div>
@@ -471,6 +482,21 @@ export default function Sidebar({ scenes, selectedSceneId, setSelectedSceneId, u
         </div>
         {/* === [임시] API 호출 콘솔 패널 끝 === */}
       </div>
+
+      <RenameDialog
+        isOpen={isRenameDialogOpen}
+        onClose={() => {
+          setIsRenameDialogOpen(false);
+          setSceneToRename(null);
+        }}
+        initialName={sceneToRename?.name || ''}
+        onRename={(newName) => {
+          if (sceneToRename) {
+            onRenameScene(sceneToRename.id, newName);
+          }
+        }}
+        position={popupPosition}
+      />
     </aside>
   );
 }

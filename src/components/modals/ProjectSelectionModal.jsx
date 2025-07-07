@@ -106,7 +106,7 @@ const ProjectSelectionModal = ({ isOpen, onProjectSelect, onProjectCreate, setAp
 
   const handleDeleteProject = async (e, projectId, projectName) => {
     e.stopPropagation();
-    if (!window.confirm(`Are you sure you want to delete the project "${projectName}"?`)) {
+    if (!window.confirm(`"${projectName}" 프로젝트를 삭제하시겠습니까?`)) {
       return;
     }
 

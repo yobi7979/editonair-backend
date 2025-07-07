@@ -43,7 +43,7 @@ function SortableObjectItem({ id, object, selectedObjectId, selectedObjectIds, e
     <div
       ref={setNodeRef}
       style={style}
-      className={`flex items-center p-1 rounded-md transition-colors\n                  ${selectedObjectIds?.includes(object.id) ? 'bg-indigo-500 text-white' : 'bg-gray-600/50'}\n                  ${isDragging ? 'shadow-lg' : ''}`}
+      className={`flex items-center p-1 rounded-md transition-colors w-full\n                  ${selectedObjectIds?.includes(object.id) ? 'bg-indigo-500 text-white' : 'bg-gray-600/50'}\n                  ${isDragging ? 'shadow-lg' : ''}`}
       onClick={e => {
         if (isLocked) return;
         if (e.ctrlKey || e.metaKey) {
@@ -55,167 +55,175 @@ function SortableObjectItem({ id, object, selectedObjectId, selectedObjectIds, e
       {...(isLocked ? { draggable: false } : {})}
     >
       {/* 잠금/숨김 버튼 */}
-      <button
-        className={`mr-1 p-0.5 rounded ${isLocked ? 'bg-gray-700 text-yellow-400' : 'bg-gray-700 text-gray-400 hover:text-yellow-400'}`}
-        title={isLocked ? '잠금 해제' : '잠금'}
-        onClick={e => {
-          e.stopPropagation();
-          onUpdateObjectProperty(object.id, 'locked', !isLocked);
-        }}
-      >
-        {isLocked ? <Lock size={14} /> : <LockOpen size={14} />}
-      </button>
-      <button
-        className={`mr-1 p-0.5 rounded ${object.visible === false ? 'bg-gray-700 text-red-400' : 'bg-gray-700 text-gray-400 hover:text-green-400'}`}
-        title={object.visible === false ? '숨김 해제' : '숨김'}
-        onClick={e => {
-          e.stopPropagation();
-          if (object.visible === false) {
-            onUpdateObjectProperty(object.id, 'visible', true);
-          } else {
-            onUpdateObjectProperty(object.id, 'visible', false);
-          }
-        }}
-      >
-        {object.visible === false ? <EyeOff size={14} /> : <Eye size={14} />}
-      </button>
-      <button {...attributes} {...listeners} className="p-0.5 mr-1 cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-200 focus:outline-none">
-        <GripVertical size={14} />
-      </button>
-      <ListTree size={12} className="mr-1 text-gray-500 flex-shrink-0" />
-      {editingObjectId === object.id ? (
-        <input
-          type="text"
-          value={editText}
-          onChange={(e) => setEditText(e.target.value)}
-          onBlur={() => {
-            if (editText.trim()) onUpdateObjectProperty(object.id, 'name', editText);
-            setEditingObjectId(null);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              if (editText.trim()) onUpdateObjectProperty(object.id, 'name', editText);
-              setEditingObjectId(null);
-              e.preventDefault();
-            }
-            if (e.key === 'Escape') {
-              setEditingObjectId(null);
-            }
-          }}
-          className="bg-gray-600 text-white text-[0.65rem] px-1 py-0.5 rounded-sm w-28 focus:outline-none focus:ring-1 focus:ring-indigo-500 flex-shrink-0"
-          autoFocus
-          onClick={(e) => e.stopPropagation()} // Prevent DND context from interfering with input focus
-        />
-      ) : (
-        <span 
-          className="truncate w-28 flex-shrink-0 text-[0.65rem] cursor-pointer"
-          title={object.name}
-          onClick={() => { if (editingObjectId !== object.id) onSelectObject(object.id); }}
-          onDoubleClick={() => {
-            setEditingObjectId(object.id);
-            setEditText(object.name);
+      <div className="flex items-center gap-1 min-w-[100px]">
+        <button
+          className={`p-1 rounded ${isLocked ? 'bg-gray-700 text-yellow-400' : 'bg-gray-700 text-gray-400 hover:text-yellow-400'}`}
+          title={isLocked ? '잠금 해제' : '잠금'}
+          onClick={e => {
+            e.stopPropagation();
+            onUpdateObjectProperty(object.id, 'locked', !isLocked);
           }}
         >
-          {object.name}
-        </span>
-      )}
-      <div className="w-24 flex-shrink-0 mx-1">
-        <MotionSelectorComponent 
-          motionType={object.in_motion?.type || 'none'} 
-          motionDirection="in"
-          objectId={object.id} 
-          onUpdateObjectProperty={onUpdateObjectProperty} 
-        />
+          {isLocked ? <Lock size={14} /> : <LockOpen size={14} />}
+        </button>
+        <button
+          className={`p-1 rounded ${object.visible === false ? 'bg-gray-700 text-red-400' : 'bg-gray-700 text-gray-400 hover:text-green-400'}`}
+          title={object.visible === false ? '숨김 해제' : '숨김'}
+          onClick={e => {
+            e.stopPropagation();
+            if (object.visible === false) {
+              onUpdateObjectProperty(object.id, 'visible', true);
+            } else {
+              onUpdateObjectProperty(object.id, 'visible', false);
+            }
+          }}
+        >
+          {object.visible === false ? <EyeOff size={14} /> : <Eye size={14} />}
+        </button>
+        <button {...attributes} {...listeners} className="p-1 rounded cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-200 focus:outline-none">
+          <GripVertical size={14} />
+        </button>
       </div>
-      <div className="w-24 flex-shrink-0 mx-1">
-        <MotionSelectorComponent 
-          motionType={object.out_motion?.type || 'none'} 
-          motionDirection="out"
-          objectId={object.id} 
-          onUpdateObjectProperty={onUpdateObjectProperty} 
-        />
-      </div>
-      <div className="flex-grow h-full bg-gray-600 rounded-sm ml-2 relative group" style={{height: 20}}>
-        {/* 눈금 표시 */}
-        <div className="absolute left-0 top-0 w-full h-full flex items-center pointer-events-none z-0">
-          {[...Array((object.timing?.duration || 5) + 1)].map((_, i) => (
-            <div key={i} style={{position:'absolute',left:`${(i/(object.timing?.duration||5))*100}%`,height:'100%',width:2,background:'#fff2',top:0}}>
-              <span style={{position:'absolute',top:'100%',left:'50%',transform:'translate(-50%,0)',fontSize:8,color:'#bbb'}}>{i}</span>
+
+      <div className="flex items-center gap-2 flex-1">
+        <ListTree size={12} className="text-gray-500 flex-shrink-0" />
+        {editingObjectId === object.id ? (
+          <input
+            type="text"
+            value={editText}
+            onChange={(e) => setEditText(e.target.value)}
+            onBlur={() => {
+              if (editText.trim()) onUpdateObjectProperty(object.id, 'name', editText);
+              setEditingObjectId(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                if (editText.trim()) onUpdateObjectProperty(object.id, 'name', editText);
+                setEditingObjectId(null);
+                e.preventDefault();
+              }
+              if (e.key === 'Escape') {
+                setEditingObjectId(null);
+              }
+            }}
+            className="bg-gray-600 text-white text-[0.65rem] px-2 py-1 rounded-sm w-28 focus:outline-none focus:ring-1 focus:ring-indigo-500 flex-shrink-0"
+            autoFocus
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <span 
+            className="truncate w-28 flex-shrink-0 text-[0.65rem] cursor-pointer px-1"
+            title={object.name}
+            onClick={() => { if (editingObjectId !== object.id) onSelectObject(object.id); }}
+            onDoubleClick={() => {
+              setEditingObjectId(object.id);
+              setEditText(object.name);
+            }}
+          >
+            {object.name}
+          </span>
+        )}
+
+        <div className="flex items-center gap-2 flex-1">
+          <div className="w-24 flex-shrink-0">
+            <MotionSelectorComponent 
+              motionType={object.in_motion?.type || 'none'} 
+              motionDirection="in"
+              objectId={object.id} 
+              onUpdateObjectProperty={onUpdateObjectProperty} 
+            />
+          </div>
+          <div className="w-24 flex-shrink-0">
+            <MotionSelectorComponent 
+              motionType={object.out_motion?.type || 'none'} 
+              motionDirection="out"
+              objectId={object.id} 
+              onUpdateObjectProperty={onUpdateObjectProperty} 
+            />
+          </div>
+          <div className="flex-grow h-full bg-gray-600 rounded-sm relative group" style={{height: 20}}>
+            {/* 눈금 표시 */}
+            <div className="absolute left-0 top-0 w-full h-full flex items-center pointer-events-none z-0">
+              {[...Array((object.timing?.duration || 5) + 1)].map((_, i) => (
+                <div key={i} style={{position:'absolute',left:`${(i/(object.timing?.duration||5))*100}%`,height:'100%',width:2,background:'#fff2',top:0}}>
+                  <span style={{position:'absolute',top:'100%',left:'50%',transform:'translate(-50%,0)',fontSize:8,color:'#bbb'}}>{i}</span>
+                </div>
+              ))}
             </div>
-          ))}
+            {/* 인/아웃 효과 시작점 핸들 */}
+            <div className="absolute top-0 left-0 w-full h-full flex items-center z-10">
+              {/* 인 효과 핸들 */}
+              <div
+                style={{
+                  position: 'absolute',
+                  left: `${((object.timing?.startTime || 0) / (object.timing?.duration || 5)) * 100}%`,
+                  zIndex: 2,
+                  cursor: 'ew-resize',
+                  width: 20,
+                  height: 20,
+                  background: '#22d3ee',
+                  borderRadius: 6,
+                  border: '2px solid #0ea5e9',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.18)',
+                  transform: 'translate(-50%, 0)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  top: 0
+                }}
+                title="인 효과 시작점"
+                draggable
+                onDragStart={e => {
+                  e.dataTransfer.effectAllowed = 'move';
+                  e.dataTransfer.setData('text/plain', 'in');
+                }}
+                onDrag={e => {
+                  if (e.clientX === 0) return;
+                  const bar = e.target.parentElement;
+                  const rect = bar.getBoundingClientRect();
+                  const percent = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
+                  const newStart = Math.round(percent * (object.timing?.duration || 5) * 100) / 100;
+                  // 인 핸들은 아웃 핸들보다 뒤로 못감
+                  if (newStart >= (object.timing?.endTime || (object.timing?.duration || 5))) return;
+                  onUpdateObjectProperty(object.id, 'timing', { ...object.timing, startTime: newStart });
+                }}
+              />
+              {/* 아웃 효과 핸들 */}
+              <div
+                style={{
+                  position: 'absolute',
+                  left: `${((object.timing?.endTime || (object.timing?.duration || 5)) / (object.timing?.duration || 5)) * 100}%`,
+                  zIndex: 2,
+                  cursor: 'ew-resize',
+                  width: 20,
+                  height: 20,
+                  background: '#f472b6',
+                  borderRadius: 6,
+                  border: '2px solid #be185d',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.18)',
+                  transform: 'translate(-50%, 0)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  top: 0
+                }}
+                title="아웃 효과 시작점"
+                draggable
+                onDragStart={e => {
+                  e.dataTransfer.effectAllowed = 'move';
+                  e.dataTransfer.setData('text/plain', 'out');
+                }}
+                onDrag={e => {
+                  if (e.clientX === 0) return;
+                  const bar = e.target.parentElement;
+                  const rect = bar.getBoundingClientRect();
+                  const percent = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
+                  const newEnd = Math.round(percent * (object.timing?.duration || 5) * 100) / 100;
+                  // 아웃 핸들은 인 핸들보다 앞으로 못감
+                  if (newEnd <= (object.timing?.startTime || 0)) return;
+                  onUpdateObjectProperty(object.id, 'timing', { ...object.timing, endTime: newEnd });
+                }}
+              />
+            </div>
+            <div className="absolute left-0 top-0 h-full w-1/3 bg-indigo-500/70 rounded-sm"></div>
+          </div>
         </div>
-        {/* 인/아웃 효과 시작점 핸들 */}
-        <div className="absolute top-0 left-0 w-full h-full flex items-center z-10">
-          {/* 인 효과 핸들 */}
-          <div
-            style={{
-              position: 'absolute',
-              left: `${((object.timing?.startTime || 0) / (object.timing?.duration || 5)) * 100}%`,
-              zIndex: 2,
-              cursor: 'ew-resize',
-              width: 20,
-              height: 20,
-              background: '#22d3ee',
-              borderRadius: 6,
-              border: '2px solid #0ea5e9',
-              boxShadow: '0 2px 6px rgba(0,0,0,0.18)',
-              transform: 'translate(-50%, 0)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              top: 0
-            }}
-            title="인 효과 시작점"
-            draggable
-            onDragStart={e => {
-              e.dataTransfer.effectAllowed = 'move';
-              e.dataTransfer.setData('text/plain', 'in');
-            }}
-            onDrag={e => {
-              if (e.clientX === 0) return;
-              const bar = e.target.parentElement;
-              const rect = bar.getBoundingClientRect();
-              const percent = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
-              const newStart = Math.round(percent * (object.timing?.duration || 5) * 100) / 100;
-              // 인 핸들은 아웃 핸들보다 뒤로 못감
-              if (newStart >= (object.timing?.endTime || (object.timing?.duration || 5))) return;
-              onUpdateObjectProperty(object.id, 'timing', { ...object.timing, startTime: newStart });
-            }}
-          />
-          {/* 아웃 효과 핸들 */}
-          <div
-            style={{
-              position: 'absolute',
-              left: `${((object.timing?.endTime || (object.timing?.duration || 5)) / (object.timing?.duration || 5)) * 100}%`,
-              zIndex: 2,
-              cursor: 'ew-resize',
-              width: 20,
-              height: 20,
-              background: '#f472b6',
-              borderRadius: 6,
-              border: '2px solid #be185d',
-              boxShadow: '0 2px 6px rgba(0,0,0,0.18)',
-              transform: 'translate(-50%, 0)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              top: 0
-            }}
-            title="아웃 효과 시작점"
-            draggable
-            onDragStart={e => {
-              e.dataTransfer.effectAllowed = 'move';
-              e.dataTransfer.setData('text/plain', 'out');
-            }}
-            onDrag={e => {
-              if (e.clientX === 0) return;
-              const bar = e.target.parentElement;
-              const rect = bar.getBoundingClientRect();
-              const percent = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
-              const newEnd = Math.round(percent * (object.timing?.duration || 5) * 100) / 100;
-              // 아웃 핸들은 인 핸들보다 앞으로 못감
-              if (newEnd <= (object.timing?.startTime || 0)) return;
-              onUpdateObjectProperty(object.id, 'timing', { ...object.timing, endTime: newEnd });
-            }}
-          />
-        </div>
-        <div className="absolute left-0 top-0 h-full w-1/3 bg-indigo-500/70 rounded-sm"></div>
       </div>
     </div>
   );
@@ -386,89 +394,93 @@ export default function Timeline({ sceneObjects = [], selectedObjectId, selected
       {/* 탭 컨텐츠 */}
       <div className={`flex-1 h-full ${activeTab === 'timeline' ? 'overflow-y-hidden' : 'overflow-y-auto'}`}>
         {activeTab === 'timeline' ? (
-          <div className="h-70 bg-gray-800 border-t border-gray-700 text-gray-300 p-3 flex flex-col shadow-inner">
-      {/* Timeline Controls */}
-            <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center space-x-2">
-          <button 
-            onClick={togglePlay}
+          <div className="h-70 bg-gray-800 flex flex-col shadow-inner">
+            {/* Timeline Controls - 고정 영역 */}
+            <div className="flex items-center justify-between p-3 bg-gray-900 border-b border-gray-700">
+              <div className="flex items-center space-x-2">
+                <button 
+                  onClick={togglePlay}
                   className="p-1 rounded hover:bg-gray-700 transition-colors focus:outline-none focus:ring-1 focus:ring-indigo-500" 
-            title={isPlaying ? "일시정지" : "재생"}
-          >
+                  title={isPlaying ? "일시정지" : "재생"}
+                >
                   {isPlaying ? <Pause size={14} /> : <Play size={14} />}
-          </button>
-          <button 
-            onClick={goToStart}
+                </button>
+                <button 
+                  onClick={goToStart}
                   className="p-1 rounded hover:bg-gray-700 transition-colors focus:outline-none focus:ring-1 focus:ring-indigo-500" 
-            title="시작으로 이동"
-          >
+                  title="시작으로 이동"
+                >
                   <SkipBack size={14} />
-          </button>
-          <button 
-            onClick={goToEnd}
+                </button>
+                <button 
+                  onClick={goToEnd}
                   className="p-1 rounded hover:bg-gray-700 transition-colors focus:outline-none focus:ring-1 focus:ring-indigo-500" 
-            title="끝으로 이동"
-          >
+                  title="끝으로 이동"
+                >
                   <SkipForward size={14} />
-          </button>
+                </button>
                 <span className="text-[0.65rem] text-gray-400">
-            {formatTime(currentTime)} / {formatTime(duration)}
-          </span>
-        </div>
+                  {formatTime(currentTime)} / {formatTime(duration)}
+                </span>
+              </div>
               <div className="flex items-center space-x-1">
                 <button className="p-1 rounded hover:bg-gray-700 transition-colors focus:outline-none focus:ring-1 focus:ring-indigo-500" title="Timeline Settings">
                   <Settings size={14} />
-          </button>
-          <input
-            type="number"
-            step="0.01"
-            min="0.1"
-            max="2"
-            value={canvasScale}
-            onChange={e => setCanvasScale(Number(e.target.value))}
+                </button>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.1"
+                  max="2"
+                  value={canvasScale}
+                  onChange={e => setCanvasScale(Number(e.target.value))}
                   className="w-14 px-1 py-0.5 rounded bg-gray-700 text-white text-[0.65rem] border border-gray-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            title="캔버스 배율"
-            style={{ marginLeft: 4 }}
-          />
-        </div>
-      </div>
+                  title="캔버스 배율"
+                  style={{ marginLeft: 4 }}
+                />
+              </div>
+            </div>
 
-      {/* Timeline Tracks Area */}
-            <div className="flex-1 bg-gray-700/30 rounded-md p-2 overflow-y-auto space-y-0.5" ref={scrollContainerRef}>
-        {sceneObjects.length > 0 ? (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
-            <SortableContext
-              items={sceneObjects.map(obj => obj.id)} // Use stable IDs
-              strategy={verticalListSortingStrategy}
-            >
-              {[...sceneObjects]
-                .sort((a, b) => (b.order ?? 0) - (a.order ?? 0))
-                .map(object => (
-                  <SortableObjectItem
-                    key={object.id}
-                    id={object.id}
-                    object={object}
-                    selectedObjectId={selectedObjectId}
-                    selectedObjectIds={selectedObjectIds}
-                    editingObjectId={editingObjectId}
-                    editText={editText}
-                    setEditText={setEditText}
-                    onSelectObject={onSelectObject}
-                    onSelectObjects={onSelectObjects}
-                    onUpdateObjectProperty={onUpdateObjectProperty}
-                    setEditingObjectId={setEditingObjectId}
-                    MotionSelectorComponent={MotionSelector} // Pass MotionSelector down
-                  />
-                ))}
-            </SortableContext>
-          </DndContext>
-        ) : (
-                <p className="text-[0.65rem] text-gray-500 italic text-center py-3">Select a scene to see its objects, or add objects to the current scene.</p>
-              )}
+            {/* Objects List Area - 스크롤 가능한 영역 */}
+            <div className="flex-1 overflow-y-auto bg-gray-800 pb-8" ref={scrollContainerRef}>
+              <div className="pt-1 px-3">
+                {sceneObjects.length > 0 ? (
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <SortableContext
+                      items={sceneObjects.map(obj => obj.id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="space-y-2 bg-gray-700/30 rounded-md p-1">
+                        {[...sceneObjects]
+                          .sort((a, b) => (b.order ?? 0) - (a.order ?? 0))
+                          .map(object => (
+                            <SortableObjectItem
+                              key={object.id}
+                              id={object.id}
+                              object={object}
+                              selectedObjectId={selectedObjectId}
+                              selectedObjectIds={selectedObjectIds}
+                              editingObjectId={editingObjectId}
+                              editText={editText}
+                              setEditText={setEditText}
+                              onSelectObject={onSelectObject}
+                              onSelectObjects={onSelectObjects}
+                              onUpdateObjectProperty={onUpdateObjectProperty}
+                              setEditingObjectId={setEditingObjectId}
+                              MotionSelectorComponent={MotionSelector}
+                            />
+                          ))}
+                      </div>
+                    </SortableContext>
+                  </DndContext>
+                ) : (
+                  <p className="text-[0.65rem] text-gray-500 italic text-center py-3">Select a scene to see its objects, or add objects to the current scene.</p>
+                )}
+              </div>
             </div>
           </div>
         ) : (

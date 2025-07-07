@@ -7,6 +7,7 @@ import PropertiesPanel from "./components/layout/PropertiesPanel";
 import ObjectAddPanel from "./components/layout/ObjectAddPanel";
 import ProjectSelectionModal from "./components/modals/ProjectSelectionModal";
 import LibraryPanel from "./components/layout/LibraryPanel";
+import ErrorBoundary from "./components/ErrorBoundary";
 import {
   getProject,
   createScene,
@@ -26,7 +27,7 @@ function App() {
   const [projectData, setProjectData] = useState(null);
   const [isLoadingProject, setIsLoadingProject] = useState(false);
   const [projectLoadError, setProjectLoadError] = useState(null);
-  const [apiBaseUrl, setApiBaseUrl] = useState('https://editonair-backend-production.up.railway.app/api');
+  const [apiBaseUrl, setApiBaseUrl] = useState('http://localhost:5000/api');
 
   // Scene and Object State
   const [scenes, setScenes] = useState([]);
@@ -183,13 +184,6 @@ function App() {
 
   // --- Scene Handlers ---
   const handleSelectScene = async (sceneId) => {
-    if (selectedSceneId && hasUnsavedChanges[selectedSceneId]) {
-      const shouldDiscard = window.confirm(
-        "저장되지 않은 변경사항이 있습니다. 계속하시겠습니까?"
-      );
-      if (!shouldDiscard) return;
-    }
-
     setSelectedSceneId(sceneId);
     setSelectedObjectId(null);
     
@@ -217,7 +211,15 @@ function App() {
   const handleRenameScene = async (sceneId, newName) => {
     if (!newName.trim()) return; // Prevent renaming to empty string
     try {
-      const updatedScene = await updateScene(apiBaseUrl, sceneId, { name: newName });
+      // 씬 데이터 전체를 가져와서 이름만 업데이트
+      const sceneToUpdate = scenes.find(scene => scene.id === sceneId);
+      if (!sceneToUpdate) return;
+
+      const updatedScene = await updateScene(apiBaseUrl, sceneId, {
+        ...sceneToUpdate,
+        name: newName
+      });
+
       setScenes(
         scenes.map((scene) =>
           scene.id === sceneId ? { ...scene, name: updatedScene.name } : scene
@@ -234,7 +236,7 @@ function App() {
     if (!sceneToDelete) return;
 
     if (
-      window.confirm(`Are you sure you want to delete "${sceneToDelete.name}"?`)
+      window.confirm(`"${sceneToDelete.name}" 씬을 삭제하시겠습니까?`)
     ) {
       try {
         await deleteScene(apiBaseUrl, sceneId);
@@ -489,14 +491,86 @@ function App() {
     }
   };
 
-  const handleUpdateObjectProperty = async (
-    objectId,
-    propertyName,
-    newValue
-  ) => {
+  const handleUpdateObjectProperty = async (objectId, propertyName, newValue) => {
     let updatedObjectData = {};
 
-    // 속성 이름 매핑
+    // cornerRadius 관련 속성 통합
+    if (propertyName === 'cornerRadius' || propertyName.startsWith('cornerRadius')) {
+      const obj = scenes.flatMap(s => s.objects).find(o => o.id === objectId);
+      if (!obj) return;
+
+      // 현재 cornerRadius 객체 가져오기
+      const currentCornerRadius = obj.properties?.cornerRadius || { 
+        topLeft: 0, topRight: 0, bottomLeft: 0, bottomRight: 0 
+      };
+
+      let newCornerRadius;
+      if (propertyName === 'cornerRadius') {
+        // cornerRadius 객체 전체 업데이트
+        newCornerRadius = { ...currentCornerRadius, ...newValue };
+      } else {
+        // 개별 모서리 값을 cornerRadius 객체로 통합
+        const cornerPart = propertyName.replace('cornerRadius', '');
+        const cornerKey = cornerPart.charAt(0).toLowerCase() + cornerPart.slice(1);
+        newCornerRadius = { ...currentCornerRadius, [cornerKey]: newValue };
+      }
+
+      // 새로운 properties 객체 생성 (기존 cornerRadius* 속성 제외)
+      const {
+        cornerRadiusTopLeft,
+        cornerRadiusTopRight,
+        cornerRadiusBottomLeft,
+        cornerRadiusBottomRight,
+        cornerRadiusAll,
+        ...cleanedProperties
+      } = obj.properties;
+
+      // properties 전체를 업데이트
+      propertyName = 'properties';
+      updatedObjectData = {
+        properties: {
+          ...cleanedProperties,
+          cornerRadius: newCornerRadius,
+          useIndividualCorners: false
+        }
+      };
+
+      // 서버에 전송할 데이터도 정리
+      const newScenes = scenes.map((scene) => {
+        if (scene.id !== selectedSceneId) return scene;
+        return {
+          ...scene,
+          objects: scene.objects.map((obj) => {
+            if (obj.id === objectId) {
+              return {
+                ...obj,
+                properties: updatedObjectData.properties
+              };
+            }
+            return obj;
+          })
+        };
+      });
+
+      console.log('업데이트될 속성:', updatedObjectData.properties);
+      console.log('새로운 씬 데이터:', newScenes);
+
+      // 상태 업데이트
+      pushUndoState();
+      setScenes(newScenes);
+      setHasUnsavedChanges(prev => ({ ...prev, [selectedSceneId]: true }));
+
+      // 서버에 저장
+      try {
+        await updateObject(apiBaseUrl, objectId, updatedObjectData);
+      } catch (err) {
+        console.error('DB 업데이트 실패:', err);
+        setScenes(scenes); // 에러 시 이전 상태로 복구
+        return;
+      }
+      return;
+    }
+
     const propertyMapping = {
       'outMotion': 'out_motion',
       'inMotion': 'in_motion'
@@ -574,7 +648,7 @@ function App() {
 
     if (
       window.confirm(
-        `Are you sure you want to delete "${objectToDelete.name}"?`
+        `"${objectToDelete.name}" 오브젝트를 삭제하시겠습니까?`
       )
     ) {
       try {
@@ -1128,7 +1202,7 @@ function App() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-gray-800 text-white font-sans">
+    <ErrorBoundary>
       <ProjectSelectionModal
         isOpen={isProjectModalOpen}
         onProjectSelect={handleProjectSelect}
@@ -1230,7 +1304,7 @@ function App() {
           />
         </div>
       </div>
-    </div>
+    </ErrorBoundary>
   );
 }
 
