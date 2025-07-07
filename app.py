@@ -1516,7 +1516,3 @@ def overlay_page(project_id):
     """오버레이 페이지 렌더링 - 퍼블릭 접근 허용"""
     project = Project.query.get_or_404(project_id)
     return render_template('overlay.html', project=project)
-
-@app.route('/health')
-def health_check():
-    return jsonify({"status": "healthy"}), 200
