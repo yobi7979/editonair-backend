@@ -218,6 +218,22 @@ def check_project_permission(user_id, project_id, required_permission):
     
     return current_level >= required_level
 
+def object_to_dict(obj):
+    """오브젝트 객체를 딕셔너리로 변환하는 헬퍼 함수"""
+    return {
+        'id': obj.id,
+        'name': obj.name,
+        'type': obj.type,
+        'order': obj.order,
+        'properties': json.loads(obj.properties) if obj.properties else {},
+        'in_motion': json.loads(obj.in_motion) if obj.in_motion else {},
+        'out_motion': json.loads(obj.out_motion) if obj.out_motion else {},
+        'timing': json.loads(obj.timing) if obj.timing else {},
+        'scene_id': obj.scene_id,
+        'created_at': obj.created_at.isoformat() if obj.created_at else None,
+        'updated_at': obj.updated_at.isoformat() if obj.updated_at else None
+    }
+
 def scene_to_dict(scene):
     """씬 객체를 딕셔너리로 변환하는 헬퍼 함수"""
     return {
