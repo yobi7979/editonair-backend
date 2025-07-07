@@ -246,7 +246,7 @@ if __name__ == '__main__':
     init_db()
     port = int(os.environ.get('PORT', 5000))
     print(f"Starting app on port {port}")
-    socketio.run(app, debug=False, host='0.0.0.0', port=port)
+    socketio.run(app, debug=False, host='0.0.0.0', port=port, allow_unsafe_werkzeug=True)
 else:
     # Production mode (when imported by gunicorn, etc.)
     init_db() 
