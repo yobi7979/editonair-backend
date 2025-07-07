@@ -458,9 +458,17 @@
         let skipInMotion = sessionStorage.getItem('skipInMotion') === 'true';
         let isBroadcasting = true; // 기본적으로 true로 설정
 
-        // 페이지 로드 시 프리로딩 시작 - 제거
+        // 페이지 로드 시 초기 씬 설정
         const projectName = '{{ project.name }}';
-        // preloadProjectData(projectName); - 이 라인 제거
+        {% if scene %}
+        const initialScene = {{ scene|tojson }};
+        console.log('Initial scene loaded:', initialScene);
+        currentScene = initialScene;
+        // 초기 씬 렌더링 (인모션 적용)
+        motionManager.updateScene(initialScene, false);
+        {% else %}
+        console.log('No initial scene provided');
+        {% endif %}
 
         // 웹소켓 이벤트 핸들러
         socket.on('connect', () => {
