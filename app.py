@@ -2,41 +2,29 @@
 # ... existing code ...
 
 import os
-from flask import Flask, jsonify, request, render_template, send_from_directory
+from flask import Flask, jsonify, request, render_template, send_from_directory, session
 from flask_sqlalchemy import SQLAlchemy
-from flask_socketio import SocketIO, emit
+from flask_socketio import SocketIO, emit, join_room, leave_room, disconnect
+from flask_jwt_extended import JWTManager, create_access_token, get_jwt_identity, jwt_required, decode_token
 import datetime
 import json
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 from urllib.parse import unquote
 from PIL import Image
 import socket
 import re
 import shutil
 import io
+from functools import wraps
+from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
+import bcrypt
+from datetime import datetime, timedelta
+import eventlet
+eventlet.monkey_patch()
 
 # Initialize Flask app
 app = Flask(__name__)
-
-# CORS 미들웨어 추가
-@app.after_request
-def after_request(response):
-    # 개발 환경과 프로덕션 환경 모두 허용
-    allowed_origins = ['http://localhost:5173', 'https://editonair-frontend.vercel.app']
-    origin = request.headers.get('Origin')
-    if origin in allowed_origins:
-        response.headers['Access-Control-Allow-Origin'] = origin
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
-    response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
-    response.headers['Access-Control-Allow-Credentials'] = 'true'
-    return response
-
-# (Flask-CORS import/use 흔적이 있다면 아래처럼 주석 처리)
-# from flask_cors import CORS
-# CORS(app)
-
-# SocketIO를 threading 모드로 명시
-socketio = SocketIO(app, async_mode='threading', cors_allowed_origins="*")  # Initialize SocketIO
 
 # Configure database
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -49,10 +37,22 @@ if database_url:
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 else:
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'editor_data.db')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# Initialize SQLAlchemy
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key')  # 프로덕션에서는 환경 변수 사용
+
+# Session configuration
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=1)
+
+# JWT 설정
+app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'your-secret-key')  # 프로덕션에서는 환경 변수 사용
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=1)  # 토큰 만료 시간
+
+# Initialize extensions
 db = SQLAlchemy(app)
+jwt = JWTManager(app)
+socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins="*")
 
 # Global variable for tracking pushed scene
 current_pushed_scene_id = None
@@ -63,6 +63,73 @@ ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 # 업로드 타임아웃 (5분)
 UPLOAD_TIMEOUT = 300  # 5분
+
+# --- Database Models ---
+
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password = db.Column(db.String(128), nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    is_active = db.Column(db.Boolean, default=True)
+
+    def __repr__(self):
+        return f'<User {self.username}>'
+
+class Project(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user = db.relationship('User', backref=db.backref('projects', lazy=True))
+
+    # Relationships
+    scenes = db.relationship('Scene', backref='project', lazy=True, cascade='all, delete-orphan')
+    permissions = db.relationship('ProjectPermission', backref='project', lazy=True, cascade='all, delete-orphan')
+
+class ProjectPermission(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    permission_type = db.Column(db.String(20), nullable=False)  # 'owner', 'editor', 'viewer'
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<ProjectPermission {self.user_id}:{self.project_id}:{self.permission_type}>'
+
+class Scene(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    order = db.Column(db.Integer, default=0)
+    duration = db.Column(db.Integer, default=0)  # 씬 길이 (밀리초)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    objects = db.relationship('Object', backref='scene', lazy=True, cascade='all, delete-orphan')
+
+class Object(db.Model):
+    __tablename__ = 'objects'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    type = db.Column(db.String(50), nullable=False)
+    order = db.Column(db.Integer, nullable=False)
+    properties = db.Column(db.Text, nullable=False)  # JSON string
+    in_motion = db.Column(db.Text, nullable=False)  # JSON string
+    out_motion = db.Column(db.Text, nullable=False)  # JSON string
+    timing = db.Column(db.Text, nullable=False)  # JSON string
+    scene_id = db.Column(db.Integer, db.ForeignKey('scene.id'), nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<Object {self.type}>'
+
+# --- Helper Functions ---
 
 def allowed_image_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
@@ -89,253 +156,491 @@ def slugify(name):
     name = re.sub(r'-+', '-', name)
     return name.strip('-') or 'untitled'
 
-# 프로젝트명으로 폴더 생성 및 경로 반환
 def get_project_folder(project_name):
+    """프로젝트명으로 폴더 생성 및 경로 반환"""
     basedir = os.path.abspath(os.path.dirname(__file__))
     folder = slugify(project_name)
     return os.path.join(basedir, '..', 'projects', folder)
 
-# --- Database Models ---
-
-class Project(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False, default='Untitled Project')
-    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
-    scenes = db.relationship('Scene', back_populates='project', lazy=True, cascade="all, delete-orphan")
-
-    def __repr__(self):
-        return f'<Project {self.name}>'
+def get_current_user_from_token():
+    """현재 인증된 사용자를 반환하는 헬퍼 함수"""
+    try:
+        current_user_id = get_jwt_identity()
+        return User.query.get(current_user_id)
+    except:
+        return None
 
 def get_project_by_name(project_name):
+    """프로젝트 이름으로 프로젝트를 찾는 헬퍼 함수"""
     return Project.query.filter_by(name=project_name).first()
 
-class Scene(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False, default='Untitled Scene')
-    order = db.Column(db.Integer, nullable=False, default=0)
-    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
-    project = db.relationship('Project', back_populates='scenes')
-    objects = db.relationship('Object', back_populates='scene', lazy=True, cascade="all, delete-orphan")
-
-    def __repr__(self):
-        return f'<Scene {self.name}>'
-
-
-class Object(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    type = db.Column(db.String(50), nullable=False)
-    order = db.Column(db.Integer, nullable=False, default=0)
-    properties = db.Column(db.Text, nullable=True)
-    in_motion = db.Column(db.Text, nullable=True)  # JSON string for in motion
-    out_motion = db.Column(db.Text, nullable=True)  # JSON string for out motion
-    timing = db.Column(db.Text, nullable=True)  # JSON string for timing info
-    scene_id = db.Column(db.Integer, db.ForeignKey('scene.id'), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
-    scene = db.relationship('Scene', back_populates='objects')
-    locked = db.Column(db.Boolean, default=False)
-    visible = db.Column(db.Boolean, default=True)
-
-    def __repr__(self):
-        return f'<Object {self.name} ({self.type})>'
-
-
-# --- Serialization/Deserialization Helpers ---
+def check_project_permission(user_id, project_id, required_permission):
+    """사용자의 프로젝트 권한을 확인하는 헬퍼 함수"""
+    permission = ProjectPermission.query.filter_by(
+        user_id=user_id,
+        project_id=project_id
+    ).first()
+    
+    if not permission:
+        return False
+        
+    # 권한 레벨 체크
+    permission_levels = {
+        'viewer': 0,
+        'editor': 1,
+        'owner': 2
+    }
+    
+    required_level = permission_levels.get(required_permission, 0)
+    current_level = permission_levels.get(permission.permission_type, 0)
+    
+    return current_level >= required_level
 
 def project_to_dict(project):
+    """프로젝트 객체를 딕셔너리로 변환하는 헬퍼 함수"""
     return {
         'id': project.id,
         'name': project.name,
         'created_at': project.created_at.isoformat() if project.created_at else None,
         'updated_at': project.updated_at.isoformat() if project.updated_at else None,
-        'scenes': [scene_to_dict(scene) for scene in sorted(project.scenes, key=lambda s: s.order)]
+        'user': project.user.to_dict() if project.user else None,
+        'scenes': [{
+            'id': scene.id,
+            'name': scene.name,
+            'order': scene.order,
+            'objects': [{
+                'id': obj.id,
+                'name': obj.name,
+                'type': obj.type,
+                'order': obj.order,
+                'properties': json.loads(obj.properties) if obj.properties else {},
+                'in_motion': json.loads(obj.in_motion) if obj.in_motion else {},
+                'out_motion': json.loads(obj.out_motion) if obj.out_motion else {},
+                'timing': json.loads(obj.timing) if obj.timing else {}
+            } for obj in sorted(scene.objects, key=lambda x: x.order)]
+        } for scene in sorted(project.scenes, key=lambda x: x.order)]
     }
 
-def scene_to_dict(scene):
-    return {
-        'id': scene.id,
-        'name': scene.name,
-        'order': scene.order,
-        'project_id': scene.project_id,
-        'created_at': scene.created_at.isoformat() if scene.created_at else None,
-        'updated_at': scene.updated_at.isoformat() if scene.updated_at else None,
-        'objects': [object_to_dict(obj) for obj in sorted(scene.objects, key=lambda o: o.order)]
-    }
+# --- Decorators ---
 
-def object_to_dict(obj):
-    return {
-        'id': obj.id,
-        'name': obj.name,
-        'type': obj.type,
-        'order': obj.order,
-        'properties': json.loads(obj.properties) if obj.properties else {},
-        'in_motion': json.loads(obj.in_motion) if obj.in_motion else {},
-        'out_motion': json.loads(obj.out_motion) if obj.out_motion else {},
-        'timing': json.loads(obj.timing) if obj.timing else {},
-        'scene_id': obj.scene_id,
-        'created_at': obj.created_at.isoformat() if obj.created_at else None,
-        'updated_at': obj.updated_at.isoformat() if obj.updated_at else None,
-        'locked': getattr(obj, 'locked', False),
-        'visible': getattr(obj, 'visible', True),
-    }
+def auth_required(permission='viewer'):
+    """권한 체크 데코레이터"""
+    def decorator(f):
+        @jwt_required()
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            current_user = get_current_user_from_token()
+            if not current_user:
+                return jsonify({'error': 'Authentication required'}), 401
+                
+            # project_name이 URL에 있는 경우
+            project_name = kwargs.get('project_name')
+            if project_name:
+                project = get_project_by_name(project_name)
+                if not project:
+                    return jsonify({'error': 'Project not found'}), 404
+                    
+                if not check_project_permission(current_user.id, project.id, permission):
+                    return jsonify({'error': 'Permission denied'}), 403
+                    
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
 
+def authenticated_only(f):
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        token = request.args.get('token')
+        if not token:
+            disconnect()
+            return False
+            
+        try:
+            decoded_token = decode_token(token)
+            user_id = decoded_token['sub']
+            user = User.query.get(user_id)
+            
+            if not user:
+                disconnect()
+                return False
+                
+            session['user_id'] = user_id
+            return f(*args, **kwargs)
+            
+        except Exception as e:
+            app.logger.error(f"WebSocket authentication error: {str(e)}")
+            disconnect()
+            return False
+            
+    return wrapped
 
-# --- API Endpoints ---
+# CORS 미들웨어 추가
+@app.after_request
+def after_request(response):
+    # 개발 환경과 프로덕션 환경 모두 허용
+    allowed_origins = ['http://localhost:5173', 'https://editonair-frontend.vercel.app']
+    origin = request.headers.get('Origin')
+    if origin in allowed_origins:
+        response.headers['Access-Control-Allow-Origin'] = origin
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
+    response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
+    response.headers['Access-Control-Allow-Credentials'] = 'true'
+    return response
 
-@app.route('/health', methods=['GET'])
-def health_check():
-    return jsonify({'status': 'healthy', 'message': 'Server is running'})
+# --- Authentication Routes ---
 
-@app.route('/api/projects', methods=['GET', 'POST'])
-def handle_projects():
-    if request.method == 'POST':
-        data = request.get_json()
-        new_project_name = data.get('name', 'Untitled Project')
-        new_project = Project(name=new_project_name)
+@app.route('/api/auth/register', methods=['POST'])
+def register():
+    data = request.get_json()
+    
+    if not all(k in data for k in ('username', 'password')):
+        return jsonify({'error': 'Missing required fields'}), 400
         
-        initial_scenes_data = data.get('scenes', [])
-        for scene_data in initial_scenes_data:
-            new_scene = Scene(
-                name=scene_data.get('name', 'Untitled Scene'),
-                order=scene_data.get('order', 0),
-                project=new_project
+    if User.query.filter_by(username=data['username']).first():
+        return jsonify({'error': 'Username already exists'}), 409
+        
+    hashed = bcrypt.hashpw(data['password'].encode('utf-8'), bcrypt.gensalt())
+    new_user = User(
+        username=data['username'],
+        password=hashed.decode('utf-8'),
+        created_at=datetime.utcnow()
+    )
+    
+    db.session.add(new_user)
+    db.session.commit()
+    
+    # 사용자 생성 후 바로 토큰 발급
+    token = create_access_token(identity=new_user.id)
+    
+    return jsonify({
+        'message': 'User created successfully',
+        'token': token,
+        'user': {
+            'id': new_user.id,
+            'username': new_user.username
+        }
+    }), 201
+
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    
+    if not all(k in data for k in ('username', 'password')):
+        return jsonify({'error': 'Missing required fields'}), 400
+        
+    user = User.query.filter_by(username=data['username']).first()
+    if not user or not bcrypt.checkpw(data['password'].encode('utf-8'), user.password.encode('utf-8')):
+        return jsonify({'error': 'Invalid username or password'}), 401
+    
+    # flask_jwt_extended의 create_access_token 사용
+    token = create_access_token(identity=user.id)
+    
+    return jsonify({
+        'token': token,
+        'user': {
+            'id': user.id,
+            'username': user.username
+        }
+    }), 200
+
+@app.route('/api/auth/me', methods=['GET'])
+@jwt_required()
+def get_current_user_info():
+    current_user = get_current_user_from_token()
+    if not current_user:
+        return jsonify({'error': 'User not found'}), 404
+        
+    return jsonify({
+        'id': current_user.id,
+        'username': current_user.username,
+        'is_active': current_user.is_active
+    })
+
+# --- WebSocket Events ---
+
+@socketio.on_error_default
+def default_error_handler(e):
+    app.logger.error(f"SocketIO error: {str(e)}")
+    emit('error', {'message': str(e)})
+
+@socketio.on('connect')
+def handle_connect():
+    """WebSocket 연결 처리"""
+    token = request.args.get('token')
+    
+    # 토큰이 없는 경우 (오버레이 페이지) - project_id로 룸 조인
+    if not token:
+        project_id = request.args.get('project_id')
+        if project_id:
+            join_room(f'project_{project_id}')
+            return True
+        return False
+        
+    # 토큰이 있는 경우 (프론트엔드 앱) - 사용자 인증
+    try:
+        decoded = decode_token(token)
+        user_id = decoded['sub']
+        join_room(f'user_{user_id}')
+        return True
+    except:
+        disconnect()
+        return False
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    if 'user_id' in session:
+        del session['user_id']
+
+@socketio.on('join')
+@authenticated_only
+def handle_join(data):
+    project_name = data.get('project')
+    if not project_name:
+        emit('error', {'message': 'Project name is required'})
+        return
+        
+    project = Project.query.filter_by(name=project_name).first()
+    if not project:
+        emit('error', {'message': 'Project not found'})
+        return
+        
+    user_id = session.get('user_id')
+    if not user_id:
+        emit('error', {'message': 'Authentication required'})
+        return
+        
+    # 프로젝트 소유자는 자동으로 권한 부여
+    if project.user_id == user_id:
+        room = f'project_{project.id}'
+        join_room(room)
+        emit('joined', {'project': project_name, 'room': room})
+        return
+        
+    # 권한 체크
+    permission = ProjectPermission.query.filter_by(
+        user_id=user_id,
+        project_id=project.id
+    ).first()
+    
+    if not permission:
+        # 프로젝트 소유자에게 기본 권한 부여
+        if project.user_id == user_id:
+            permission = ProjectPermission(
+                user_id=user_id,
+                project_id=project.id,
+                permission_type='owner'
             )
-            initial_objects_data = scene_data.get('objects', [])
-            for i, obj_data in enumerate(initial_objects_data):
-                new_object = Object(
-                    name=obj_data.get('name', 'New Object'),
-                    type=obj_data.get('type', 'text'),
-                    order=obj_data.get('order', i),
-                    properties=json.dumps(obj_data.get('properties', {})),
-                    in_motion=json.dumps(obj_data.get('in_motion', {})),
-                    out_motion=json.dumps(obj_data.get('out_motion', {})),
-                    timing=json.dumps(obj_data.get('timing', {})),
-                    scene=new_scene
-                )
-                db.session.add(new_object)
-            db.session.add(new_scene)
+            db.session.add(permission)
+            db.session.commit()
+        else:
+            emit('error', {'message': 'Permission denied'})
+            return
+            
+    room = f'project_{project.id}'
+    join_room(room)
+    emit('joined', {'project': project_name, 'room': room})
+
+# --- Project API ---
+
+@app.route('/api/projects', methods=['POST'])
+@jwt_required()
+def create_project():
+    data = request.get_json()
+    if not data or 'name' not in data:
+        return jsonify({'message': 'Project name is required'}), 400
         
-        db.session.add(new_project)
+    user_id = get_jwt_identity()
+    
+    # 프로젝트 생성
+    project = Project(
+        name=data['name'],
+        user_id=user_id
+    )
+    db.session.add(project)
+    
+    # 씬 생성
+    if 'scenes' in data:
+        for scene_data in data['scenes']:
+            scene = Scene(
+                name=scene_data['name'],
+                order=scene_data['order'],
+                project=project
+            )
+            db.session.add(scene)
+            
+    try:
         db.session.commit()
+        return jsonify({
+            'id': project.id,
+            'name': project.name,
+            'created_at': project.created_at.isoformat(),
+            'updated_at': project.updated_at.isoformat(),
+            'scenes': [{
+                'id': scene.id,
+                'name': scene.name,
+                'order': scene.order
+            } for scene in project.scenes]
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Failed to create project: {str(e)}")
+        return jsonify({'message': 'Failed to create project'}), 500
 
-        # --- 라이브러리 폴더 자동 생성 ---
-        project_folder = get_project_folder(new_project_name)
-        images_path = os.path.join(project_folder, 'library', 'images')
-        sequences_path = os.path.join(project_folder, 'library', 'sequences')
-        os.makedirs(images_path, exist_ok=True)
-        os.makedirs(sequences_path, exist_ok=True)
+@app.route('/api/projects', methods=['GET'])
+@jwt_required()
+def handle_projects():
+    current_user = get_current_user_from_token()
+    if not current_user:
+        return jsonify({'error': 'Authentication required'}), 401
 
-        return jsonify(project_to_dict(new_project)), 201
-
-    elif request.method == 'GET':
-        projects = Project.query.order_by(Project.updated_at.desc()).all()
-        # 각 프로젝트별 라이브러리 폴더가 없으면 생성
-        for p in projects:
-            project_folder = get_project_folder(p.name)
-            images_path = os.path.join(project_folder, 'library', 'images')
-            sequences_path = os.path.join(project_folder, 'library', 'sequences')
-            os.makedirs(images_path, exist_ok=True)
-            os.makedirs(sequences_path, exist_ok=True)
-        return jsonify([{
-            'id': p.id, 
-            'name': p.name, 
-            'created_at': p.created_at.isoformat() if p.created_at else None,
-            'updated_at': p.updated_at.isoformat() if p.updated_at else None
-         } for p in projects])
+    if request.method == 'POST':
+        try:
+            data = request.get_json()
+            new_project_name = data.get('name', 'Untitled Project')
+                
+            new_project = Project(
+                name=new_project_name,
+                user_id=current_user.id
+            )
+            db.session.add(new_project)
+            db.session.flush()  # ID를 얻기 위해 flush
+            
+            initial_scenes_data = data.get('scenes', [])
+            for scene_data in initial_scenes_data:
+                new_scene = Scene(
+                    name=scene_data.get('name', 'Untitled Scene'),
+                    order=scene_data.get('order', 0),
+                    project=new_project
+                )
+                db.session.add(new_scene)
+                db.session.flush()  # ID를 얻기 위해 flush
+                
+                initial_objects_data = scene_data.get('objects', [])
+                for i, obj_data in enumerate(initial_objects_data):
+                    new_object = Object(
+                        name=obj_data.get('name', 'New Object'),
+                        type=obj_data.get('type', 'text'),
+                        order=obj_data.get('order', i),
+                        properties=json.dumps(obj_data.get('properties', {})),
+                        in_motion=json.dumps(obj_data.get('in_motion', {})),
+                        out_motion=json.dumps(obj_data.get('out_motion', {})),
+                        timing=json.dumps(obj_data.get('timing', {})),
+                        scene=new_scene
+                    )
+                    db.session.add(new_object)
+            
+            # 프로젝트 소유자 권한 추가
+            permission = ProjectPermission(
+                project_id=new_project.id,
+                user_id=current_user.id,
+                permission_type='owner'
+            )
+            db.session.add(permission)
+            
+            db.session.commit()
+            
+            # 프로젝트 폴더 생성
+            project_folder = get_project_folder(new_project_name)
+            os.makedirs(os.path.join(project_folder, 'library', 'images'), exist_ok=True)
+            os.makedirs(os.path.join(project_folder, 'library', 'sequences'), exist_ok=True)
+            
+            return jsonify(project_to_dict(new_project)), 201
+            
+        except Exception as e:
+            db.session.rollback()
+            app.logger.error(f"Error creating project: {str(e)}")
+            return jsonify({'error': 'Failed to create project'}), 500
+            
+    else:  # GET
+        try:
+            # 사용자가 접근 가능한 모든 프로젝트 조회
+            permissions = ProjectPermission.query.filter_by(user_id=current_user.id).all()
+            project_ids = [p.project_id for p in permissions]
+            projects = Project.query.filter(Project.id.in_(project_ids)).all()
+            
+            return jsonify([project_to_dict(p) for p in projects])
+            
+        except Exception as e:
+            app.logger.error(f"Error fetching projects: {str(e)}")
+            return jsonify({'error': 'Failed to fetch projects'}), 500
 
 @app.route('/api/projects/<project_name>', methods=['GET', 'PUT', 'DELETE'])
-def handle_project(project_name):
+@auth_required('viewer')  # 기본적으로 viewer 권한 필요
+def handle_project_detail(project_name):
+    current_user = get_current_user_from_token()
     project = get_project_by_name(project_name)
 
     if request.method == 'GET':
-        # --- 라이브러리 폴더 없으면 생성 ---
-        project_folder = get_project_folder(project_name)
-        images_path = os.path.join(project_folder, 'library', 'images')
-        sequences_path = os.path.join(project_folder, 'library', 'sequences')
-        os.makedirs(images_path, exist_ok=True)
-        os.makedirs(sequences_path, exist_ok=True)
         return jsonify(project_to_dict(project))
-
+        
     elif request.method == 'PUT':
+        # 편집 권한 확인
+        if not check_project_permission(current_user.id, project.id, 'editor'):
+            return jsonify({'error': 'Permission denied'}), 403
+            
         data = request.get_json()
-        project.name = data.get('name', project.name)
-        
-        incoming_scene_ids = {s_data['id'] for s_data in data.get('scenes', []) if 'id' in s_data}
-        
-        for scene in list(project.scenes):
-            if scene.id not in incoming_scene_ids:
-                db.session.delete(scene)
-
-        for s_data in data.get('scenes', []):
-            scene_id = s_data.get('id')
-            current_scene = None
-            if scene_id:
-                current_scene = next((s for s in project.scenes if s.id == scene_id), None)
-
-            if current_scene:
-                current_scene.name = s_data.get('name', current_scene.name)
-                current_scene.order = s_data.get('order', current_scene.order)
-            else:
-                current_scene = Scene(
-                    name=s_data.get('name', 'Untitled Scene'),
-                    order=s_data.get('order', 0),
-                    project_id=project.id
-                )
-                db.session.add(current_scene)
-                project.scenes.append(current_scene)
-            
-            db.session.flush()
-
-            incoming_object_ids = {o_data['id'] for o_data in s_data.get('objects', []) if 'id' in o_data}
-            for obj in list(current_scene.objects):
-                if obj.id not in incoming_object_ids:
-                    db.session.delete(obj)
-            
-            for o_data in s_data.get('objects', []):
-                obj_id = o_data.get('id')
-                current_object = None
-                if obj_id:
-                    current_object = next((o for o in current_scene.objects if o.id == obj_id), None)
-
-                if current_object:
-                    current_object.name = o_data.get('name', current_object.name)
-                    current_object.type = o_data.get('type', current_object.type)
-                    current_object.order = o_data.get('order', current_object.order)
-                    current_object.properties = json.dumps(o_data.get('properties', {}))
-                    current_object.in_motion = json.dumps(o_data.get('in_motion', {}))
-                    current_object.out_motion = json.dumps(o_data.get('out_motion', {}))
-                    current_object.timing = json.dumps(o_data.get('timing', {}))
-                else:
-                    new_object = Object(
-                        name=o_data.get('name', 'New Object'),
-                        type=o_data.get('type', 'text'),
-                        order=o_data.get('order', 0),
-                        properties=json.dumps(o_data.get('properties', {})),
-                        in_motion=json.dumps(o_data.get('in_motion', {})),
-                        out_motion=json.dumps(o_data.get('out_motion', {})),
-                        timing=json.dumps(o_data.get('timing', {})),
-                        scene_id=current_scene.id
-                    )
-                    db.session.add(new_object)
-
-        project.updated_at = datetime.datetime.utcnow()
-        db.session.add(project)
+        if 'name' in data:
+            project.name = data['name']
         db.session.commit()
         return jsonify(project_to_dict(project))
-
+        
     elif request.method == 'DELETE':
+        # 소유자 권한 확인
+        if not check_project_permission(current_user.id, project.id, 'owner'):
+            return jsonify({'error': 'Permission denied'}), 403
+            
+        # 프로젝트 폴더 삭제
+        project_folder = get_project_folder(project.name)
+        if os.path.exists(project_folder):
+            shutil.rmtree(project_folder)
+            
         db.session.delete(project)
         db.session.commit()
-        return jsonify({'message': 'Project deleted'}), 200
+        return jsonify({'message': 'Project deleted successfully'})
 
+@app.route('/api/projects/<project_name>/share', methods=['POST'])
+@auth_required('owner')
+def handle_project_share(project_name):
+    current_user = get_current_user_from_token()
+    project = get_project_by_name(project_name)
+    
+    data = request.get_json()
+    if not all(k in data for k in ('username', 'permission_type')):
+        return jsonify({'error': 'Missing required fields'}), 400
+        
+    # 권한 타입 검증
+    if data['permission_type'] not in ['viewer', 'editor', 'owner']:
+        return jsonify({'error': 'Invalid permission type'}), 400
+        
+    # 공유할 사용자 찾기
+    share_user = User.query.filter_by(username=data['username']).first()
+    if not share_user:
+        return jsonify({'error': 'User not found'}), 404
+        
+    # 이미 권한이 있는지 확인
+    existing_permission = ProjectPermission.query.filter_by(
+        project_id=project.id,
+        user_id=share_user.id
+    ).first()
+    
+    if existing_permission:
+        existing_permission.permission_type = data['permission_type']
+    else:
+        new_permission = ProjectPermission(
+            project_id=project.id,
+            user_id=share_user.id,
+            permission_type=data['permission_type']
+        )
+        db.session.add(new_permission)
+        
+    db.session.commit()
+    return jsonify({'message': 'Project shared successfully'})
 
 # Scene CRUD operations
 @app.route('/api/projects/<project_name>/scenes', methods=['POST'])
+@auth_required('editor')
 def create_scene(project_name):
+    current_user = get_current_user_from_token()
     project = get_project_by_name(project_name)
     data = request.get_json()
     if not data or 'name' not in data:
@@ -354,6 +659,7 @@ def create_scene(project_name):
     return jsonify(scene_to_dict(new_scene)), 201
 
 @app.route('/api/scenes/<int:scene_id>', methods=['GET', 'PUT'])
+@auth_required('viewer')
 def handle_scene(scene_id):
     scene = Scene.query.get_or_404(scene_id)
     
@@ -410,6 +716,7 @@ def handle_scene(scene_id):
         return jsonify(scene_to_dict(scene))
 
 @app.route('/api/scenes/<int:scene_id>', methods=['DELETE'])
+@auth_required('editor')
 def delete_scene(scene_id):
     scene = Scene.query.get_or_404(scene_id)
     db.session.delete(scene)
@@ -460,6 +767,7 @@ def overlay_scene(project_name, scene_id):
                          canvas_height=1080)
 
 @app.route('/api/scenes/<int:scene_id>/push', methods=['POST'])
+@auth_required('editor')
 def push_scene(scene_id):
     try:
         global current_pushed_scene_id
@@ -479,6 +787,7 @@ def push_scene(scene_id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/scenes/<int:scene_id>/out', methods=['POST'])
+@auth_required('editor')
 def out_scene(scene_id):
     try:
         scene = Scene.query.get_or_404(scene_id)
@@ -500,14 +809,44 @@ def init_db():
     try:
         with app.app_context():
             db.create_all()
+            
+            # 기본 사용자가 없는 경우 생성
+            default_user = User.query.filter_by(username='admin').first()
+            if not default_user:
+                default_user = User(
+                    username='admin',
+                    password=generate_password_hash('admin123'), # 초기 비밀번호
+                    is_active=True
+                )
+                db.session.add(default_user)
+                db.session.commit()
+                
+                # 기존 프로젝트들을 기본 사용자에게 할당
+                projects = Project.query.filter_by(user_id=None).all()
+                for project in projects:
+                    project.user_id = default_user.id
+                    permission = ProjectPermission(
+                        project_id=project.id,
+                        user_id=default_user.id,
+                        permission_type='owner'
+                    )
+                    db.session.add(permission)
+                db.session.commit()
+                
             print("Database initialized successfully!")
     except Exception as e:
         print(f"Database initialization error: {e}")
         # 프로덕션에서는 에러를 무시하고 계속 진행
         pass
 
+def get_user_by_name(username):
+    return User.query.filter_by(username=username).first()
+
+def get_user_by_email(email):
+    return User.query.filter_by(email=email).first()
 
 @app.route('/api/scenes/<int:scene_id>/objects', methods=['POST'])
+@auth_required('editor')
 def create_object(scene_id):
     scene = Scene.query.get_or_404(scene_id)
     data = request.get_json()
@@ -534,6 +873,7 @@ def create_object(scene_id):
     return jsonify(object_to_dict(new_object)), 201
 
 @app.route('/api/objects/<int:object_id>', methods=['PUT'])
+@auth_required('editor')
 def update_object(object_id):
     """Updates an existing object."""
     obj = Object.query.get_or_404(object_id)
@@ -574,6 +914,7 @@ def update_object(object_id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/objects/<int:object_id>', methods=['DELETE'])
+@auth_required('editor')
 def delete_object(object_id):
     """Deletes an object."""
     obj = Object.query.get_or_404(object_id)
@@ -582,6 +923,7 @@ def delete_object(object_id):
     return jsonify({'message': 'Object deleted successfully'}), 200
 
 @app.route('/api/scenes/<int:scene_id>/object-orders', methods=['PUT'])
+@auth_required('editor')
 def update_object_orders(scene_id):
     """Updates the order of multiple objects in a scene at once."""
     try:
@@ -631,43 +973,57 @@ def update_object_orders(scene_id):
 
 # --- WebSocket Events ---
 
-@socketio.on('connect')
-def handle_connect():
-    print('Client connected')
-
-@socketio.on('disconnect')
-def handle_disconnect():
-    print('Client disconnected')
-
-@socketio.on('join_project')
-def handle_join_project(data):
-    project_name = data.get('project_name')
-    if project_name:
-        print(f'Client joined project: {project_name}')
-
-@socketio.on('join_scene')
-def handle_join_scene(data):
-    scene_id = data.get('scene_id')
-    if scene_id:
-        print(f'Client joined scene: {scene_id}')
-
 @socketio.on('scene_change')
 def handle_scene_change(data):
-    project_name = data.get('project_name')
-    scene_id = data.get('scene_id')
-    if project_name and scene_id:
-        emit('scene_change', {
-            'project_name': project_name,
-            'scene_id': scene_id,
-            'transition': data.get('transition', 'fade'),
-            'duration': data.get('duration', 1.0)
-        })
+    """씬 변경 이벤트 처리 - 인증된 사용자만 가능"""
+    try:
+        token = request.args.get('token')
+        if not token:
+            disconnect()
+            return False
+            
+        decoded = decode_token(token)
+        project_id = data.get('project_id')
+        
+        # 프로젝트 권한이 있는 경우만 허용
+        if check_project_permission(project_id):
+            emit('scene_change', data, room=f'project_{project_id}')
+            return True
+            
+        disconnect()
+        return False
+    except:
+        disconnect()
+        return False
+
+@socketio.on('scene_out')
+def handle_scene_out(data):
+    """씬 아웃 이벤트 처리 - 인증된 사용자만 가능"""
+    try:
+        token = request.args.get('token')
+        if not token:
+            disconnect()
+            return False
+            
+        decoded = decode_token(token)
+        project_id = data.get('project_id')
+        
+        # 프로젝트 권한이 있는 경우만 허용
+        if check_project_permission(project_id):
+            emit('scene_out', room=f'project_{project_id}')
+            return True
+            
+        disconnect()
+        return False
+    except:
+        disconnect()
+        return False
 
 @socketio.on('get_first_scene')
 def handle_get_first_scene(data):
     project_name = data.get('project_name')
     if project_name:
-        project = get_project_by_name(project_name)
+        project = Project.query.filter_by(name=project_name).first()
         if project and project.scenes:
             first_scene = project.scenes[0]
             emit('first_scene', scene_to_dict(first_scene))
@@ -745,6 +1101,7 @@ def get_sequence_thumbnail_path(project_name, sequence_name):
     return os.path.join(thumb_dir, f"{sequence_name}.webp")
 
 @app.route('/api/projects/<project_name>/upload/image', methods=['POST'])
+@auth_required('editor')
 def upload_image(project_name):
     try:
         if 'file' not in request.files:
@@ -916,6 +1273,7 @@ def process_sequence_images(image_files, output_dir, sequence_name, options=None
     return processed_files, sprite_path, meta
 
 @app.route('/api/projects/<project_name>/upload/sequence', methods=['POST'])
+@auth_required('editor')
 def upload_sequence(project_name):
     try:
         if 'sprite' not in request.files or 'meta' not in request.files:
@@ -973,6 +1331,7 @@ def upload_sequence(project_name):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/projects/<project_name>/library/images', methods=['GET'])
+@auth_required('viewer')
 def list_project_images(project_name):
     project = get_project_by_name(project_name)
     if not project:
@@ -985,6 +1344,7 @@ def list_project_images(project_name):
     return jsonify(files)
 
 @app.route('/api/projects/<project_name>/library/sequences', methods=['GET'])
+@auth_required('viewer')
 def list_project_sequences(project_name):
     project = get_project_by_name(project_name)
     if not project:
@@ -1019,6 +1379,7 @@ def serve_project_sequence_frame(project_name, sequence_and_filename):
     return send_from_directory(sequences_path, decoded_path)
 
 @app.route('/api/projects/<project_name>/library/images/<filename>', methods=['DELETE'])
+@auth_required('editor')
 def delete_project_image(project_name, filename):
     project = get_project_by_name(project_name)
     if not project:
@@ -1034,6 +1395,7 @@ def delete_project_image(project_name, filename):
         return jsonify({'error': 'File not found'}), 404
 
 @app.route('/api/projects/<project_name>/library/sequences/<sequence_name>', methods=['DELETE'])
+@auth_required('editor')
 def delete_project_sequence(project_name, sequence_name):
     project = get_project_by_name(project_name)
     if not project:
@@ -1048,6 +1410,7 @@ def delete_project_sequence(project_name, sequence_name):
         return jsonify({'error': 'Sequence not found'}), 404
 
 @app.route('/api/preload/<project_name>')
+@auth_required('viewer')
 def preload_project(project_name):
     """프로젝트 데이터를 미리 로드하여 캐시"""
     try:
@@ -1094,14 +1457,62 @@ def preload_project(project_name):
 
 # --- Main Entry Point ---
 
-# Railway에서 작동하도록 전역에서 초기화
-with app.app_context():
-    init_db()
-
-# Railway에서 app 객체를 인식할 수 있도록
-application = app
-
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    # Railway에서는 일반 Flask 앱으로 실행
-    app.run(host="0.0.0.0", port=port, debug=False)
+    import eventlet
+    eventlet.monkey_patch()
+    
+    with app.app_context():
+        db.create_all()  # 데이터베이스 테이블 생성
+        
+        # 기본 관리자 계정 생성
+        admin = User.query.filter_by(username='admin').first()
+        if not admin:
+            admin = User(
+                username='admin',
+                password=bcrypt.hashpw('admin123'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
+                is_active=True
+            )
+            db.session.add(admin)
+            db.session.commit()
+            
+    socketio.run(app, debug=True, host='0.0.0.0', port=5000)
+
+# 임시 접근 토큰 관련 함수
+def generate_overlay_token(project_id):
+    """오버레이 페이지용 임시 접근 토큰 생성"""
+    expires = datetime.utcnow() + timedelta(days=30)  # 30일 유효
+    token = create_access_token(
+        identity=project_id,
+        expires_delta=timedelta(days=30),
+        additional_claims={'type': 'overlay'}
+    )
+    return token
+
+def verify_overlay_token(token):
+    """오버레이 페이지용 토큰 검증"""
+    try:
+        decoded = decode_token(token)
+        if decoded.get('type') != 'overlay':
+            return None
+        return decoded['sub']  # project_id 반환
+    except:
+        return None
+
+@app.route('/api/projects/<int:project_id>/overlay-token', methods=['POST'])
+@jwt_required()
+def create_overlay_token(project_id):
+    """프로젝트의 오버레이 접근 토큰 생성 API"""
+    project = Project.query.get_or_404(project_id)
+    
+    # 프로젝트 접근 권한 확인
+    if not check_project_permission(project_id):
+        return jsonify({'message': '권한이 없습니다.'}), 403
+        
+    token = generate_overlay_token(project_id)
+    return jsonify({'token': token})
+
+@app.route('/overlay/<int:project_id>')
+def overlay_page(project_id):
+    """오버레이 페이지 렌더링 - 퍼블릭 접근 허용"""
+    project = Project.query.get_or_404(project_id)
+    return render_template('overlay.html', project=project)

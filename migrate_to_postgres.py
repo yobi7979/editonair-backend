@@ -4,127 +4,133 @@ SQLite에서 PostgreSQL로 데이터 마이그레이션 스크립트
 """
 
 import os
-import sys
-import json
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
+import sqlite3
+import psycopg2
+from urllib.parse import urlparse
+from datetime import datetime
 
-# 현재 디렉토리를 Python 경로에 추가
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+def get_database_url():
+    """데이터베이스 URL 가져오기"""
+    db_url = os.getenv('DATABASE_URL')
+    if not db_url:
+        db_url = 'postgresql://postgres:postgres@localhost:5432/editor'
+    return db_url
 
-from app import app, db, Project, Scene, Object
+def connect_postgres():
+    """PostgreSQL 데이터베이스 연결"""
+    db_url = get_database_url()
+    parsed = urlparse(db_url)
+    
+    conn = psycopg2.connect(
+        dbname=parsed.path[1:],
+        user=parsed.username,
+        password=parsed.password,
+        host=parsed.hostname,
+        port=parsed.port or 5432
+    )
+    return conn
 
-def migrate_data():
-    """SQLite 데이터를 PostgreSQL로 마이그레이션"""
-    
-    # SQLite 연결 (기존 DB)
-    sqlite_engine = create_engine('sqlite:///editor_data.db')
-    SQLiteSession = sessionmaker(bind=sqlite_engine)
-    sqlite_session = SQLiteSession()
-    
-    # PostgreSQL 연결 (새 DB)
-    database_url = os.environ.get('DATABASE_URL')
-    if not database_url:
-        print("DATABASE_URL 환경변수가 설정되지 않았습니다.")
-        return False
-    
-    # Railway PostgreSQL URL을 SQLAlchemy 형식으로 변환
-    if database_url.startswith('postgres://'):
-        database_url = database_url.replace('postgres://', 'postgresql://', 1)
-    
-    postgres_engine = create_engine(database_url)
-    PostgresSession = sessionmaker(bind=postgres_engine)
-    postgres_session = PostgresSession()
+def connect_sqlite():
+    """SQLite 데이터베이스 연결"""
+    db_path = os.path.join(os.path.dirname(__file__), 'editor_data.db')
+    return sqlite3.connect(db_path)
+
+def migrate_users():
+    """사용자 데이터 마이그레이션"""
+    sqlite_conn = connect_sqlite()
+    pg_conn = connect_postgres()
     
     try:
-        # PostgreSQL에서 테이블 생성
-        with app.app_context():
-            db.create_all()
+        # SQLite에서 사용자 데이터 읽기
+        sqlite_cur = sqlite_conn.cursor()
+        sqlite_cur.execute('SELECT id, username, password_hash, email FROM users')
+        users = sqlite_cur.fetchall()
         
-        print("PostgreSQL 테이블 생성 완료")
-        
-        # SQLite에서 데이터 읽기
-        print("SQLite에서 데이터 읽는 중...")
-        
-        # Projects
-        projects = sqlite_session.execute(text("SELECT * FROM project")).fetchall()
-        print(f"Found {len(projects)} projects")
-        
-        for project_row in projects:
-            # PostgreSQL에 프로젝트 삽입
-            new_project = Project(
-                id=project_row.id,
-                name=project_row.name,
-                created_at=project_row.created_at,
-                updated_at=project_row.updated_at
+        # PostgreSQL에 사용자 데이터 삽입
+        pg_cur = pg_conn.cursor()
+        for user in users:
+            pg_cur.execute(
+                'INSERT INTO users (id, username, password_hash, email) VALUES (%s, %s, %s, %s)',
+                user
             )
-            postgres_session.add(new_project)
         
-        # Scenes
-        scenes = sqlite_session.execute(text("SELECT * FROM scene")).fetchall()
-        print(f"Found {len(scenes)} scenes")
+        pg_conn.commit()
+        print(f'Migrated {len(users)} users')
         
-        for scene_row in scenes:
-            new_scene = Scene(
-                id=scene_row.id,
-                name=scene_row.name,
-                order=scene_row.order,
-                project_id=scene_row.project_id,
-                created_at=scene_row.created_at,
-                updated_at=scene_row.updated_at
-            )
-            postgres_session.add(new_scene)
-        
-        # Objects
-        objects = sqlite_session.execute(text("SELECT * FROM object")).fetchall()
-        print(f"Found {len(objects)} objects")
-        
-        for object_row in objects:
-            new_object = Object(
-                id=object_row.id,
-                name=object_row.name,
-                type=object_row.type,
-                order=object_row.order,
-                properties=object_row.properties,
-                in_motion=object_row.in_motion,
-                out_motion=object_row.out_motion,
-                timing=object_row.timing,
-                scene_id=object_row.scene_id,
-                created_at=object_row.created_at,
-                updated_at=object_row.updated_at,
-                locked=getattr(object_row, 'locked', False),
-                visible=getattr(object_row, 'visible', True)
-            )
-            postgres_session.add(new_object)
-        
-        # 변경사항 커밋
-        postgres_session.commit()
-        print("데이터 마이그레이션 완료!")
-        
-        # 결과 확인
-        project_count = postgres_session.query(Project).count()
-        scene_count = postgres_session.query(Scene).count()
-        object_count = postgres_session.query(Object).count()
-        
-        print(f"마이그레이션 결과:")
-        print(f"- Projects: {project_count}")
-        print(f"- Scenes: {scene_count}")
-        print(f"- Objects: {object_count}")
-        
-        return True
-        
-    except Exception as e:
-        print(f"마이그레이션 중 오류 발생: {e}")
-        postgres_session.rollback()
-        return False
-    
     finally:
-        sqlite_session.close()
-        postgres_session.close()
+        sqlite_conn.close()
+        pg_conn.close()
 
-if __name__ == "__main__":
-    if migrate_data():
-        print("마이그레이션이 성공적으로 완료되었습니다!")
-    else:
-        print("마이그레이션에 실패했습니다.")
-        sys.exit(1) 
+def migrate_projects():
+    """프로젝트 데이터 마이그레이션"""
+    sqlite_conn = connect_sqlite()
+    pg_conn = connect_postgres()
+    
+    try:
+        # SQLite에서 프로젝트 데이터 읽기
+        sqlite_cur = sqlite_conn.cursor()
+        sqlite_cur.execute('SELECT id, name, created_at, updated_at FROM projects')
+        projects = sqlite_cur.fetchall()
+        
+        # PostgreSQL에 프로젝트 데이터 삽입
+        pg_cur = pg_conn.cursor()
+        for project in projects:
+            # 기본 사용자를 소유자로 설정
+            pg_cur.execute('''
+                INSERT INTO projects (id, name, created_at, updated_at, user_id)
+                VALUES (%s, %s, %s, %s, 1)
+            ''', project)
+            
+            # 프로젝트 권한 추가
+            pg_cur.execute('''
+                INSERT INTO project_permissions (project_id, user_id, permission_type)
+                VALUES (%s, 1, 'owner')
+            ''', (project[0],))
+        
+        pg_conn.commit()
+        print(f'Migrated {len(projects)} projects')
+        
+    finally:
+        sqlite_conn.close()
+        pg_conn.close()
+
+def migrate_scenes():
+    """씬 데이터 마이그레이션"""
+    sqlite_conn = connect_sqlite()
+    pg_conn = connect_postgres()
+    
+    try:
+        # SQLite에서 씬 데이터 읽기
+        sqlite_cur = sqlite_conn.cursor()
+        sqlite_cur.execute('SELECT id, project_id, name, data FROM scenes')
+        scenes = sqlite_cur.fetchall()
+        
+        # PostgreSQL에 씬 데이터 삽입
+        pg_cur = pg_conn.cursor()
+        for scene in scenes:
+            pg_cur.execute(
+                'INSERT INTO scenes (id, project_id, name, data) VALUES (%s, %s, %s, %s)',
+                scene
+            )
+        
+        pg_conn.commit()
+        print(f'Migrated {len(scenes)} scenes')
+        
+    finally:
+        sqlite_conn.close()
+        pg_conn.close()
+
+def migrate_all():
+    """전체 데이터 마이그레이션 실행"""
+    print('Starting migration...')
+    print(f'Target database: {get_database_url()}')
+    
+    # 순서대로 마이그레이션 실행
+    migrate_users()
+    migrate_projects()
+    migrate_scenes()
+    
+    print('Migration completed successfully')
+
+if __name__ == '__main__':
+    migrate_all() 
