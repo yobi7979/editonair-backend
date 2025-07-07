@@ -1784,7 +1784,7 @@ def delete_project_sequence(project_name, sequence_name):
         return jsonify({'error': 'Project not found'}), 404
     project_folder = get_project_folder(project_name, current_user.id)
     sequences_path = os.path.join(project_folder, 'library', 'sequences')
-    sequence_folder = os.path.join(sequences_path, safe_unicode_filename(sequence_name))
+    sequence_folder = os.path.join(sequences_path, sequence_name)
     if os.path.exists(sequence_folder):
         shutil.rmtree(sequence_folder)
         return jsonify({'message': 'Sequence deleted'}), 200

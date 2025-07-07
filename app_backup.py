@@ -29,11 +29,11 @@ monkey.patch_all()
 app = Flask(__name__)
 CORS(app, origins=["http://localhost:5173", "http://localhost:3000", "*"], supports_credentials=True)
 
-# 파일 업로드 관련 상수
-ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg', 'tiff'}
-MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
-
 print("Starting application...")
+
+# 상수 정의
+ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'}
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
 try:
     # Configure database
@@ -72,8 +72,8 @@ except Exception as e:
     print(f"Error during initialization: {e}")
     raise
 
-# 전역 변수들
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent', allow_unsafe_werkzeug=True)
+# 전역 변수들 (중복 제거)
+# socketio는 이미 위에서 초기화됨
 
 # 사용자별 송출 상태 관리 (메모리 기반)
 user_broadcast_state = {}
@@ -504,14 +504,15 @@ def handle_join(data):
         emit('error', {'message': 'Project name is required'})
         return
         
-    project = get_project_by_name(project_name, session.get('user_id'))
-    if not project:
-        emit('error', {'message': 'Project not found'})
-        return
-        
+    # WebSocket에서는 session에 user_id가 설정되어 있음 (authenticated_only 데코레이터에서)
     user_id = session.get('user_id')
     if not user_id:
         emit('error', {'message': 'Authentication required'})
+        return
+        
+    project = get_project_by_name(project_name, user_id)
+    if not project:
+        emit('error', {'message': 'Project not found'})
         return
         
     # 프로젝트 소유자는 자동으로 권한 부여
@@ -795,7 +796,7 @@ def handle_project_share(project_name):
     
     if existing_permission:
         existing_permission.permission_type = data['permission_type']
-                else:
+    else:
         new_permission = ProjectPermission(
             project_id=project.id,
             user_id=share_user.id,
@@ -803,7 +804,7 @@ def handle_project_share(project_name):
         )
         db.session.add(new_permission)
         
-        db.session.commit()
+    db.session.commit()
     return jsonify({'message': 'Project shared successfully'})
 
 # Scene CRUD operations
@@ -971,8 +972,8 @@ def overlay_project(project_name):
 
 @app.route('/overlay/project/<project_name>/scene/<int:scene_id>')
 def overlay_scene(project_name, scene_id):
-    # 오버레이 페이지는 인증 없이 접근 가능하므로 기존 방식 사용
-    project = get_project_by_name(project_name, session.get('user_id'))
+    # 오버레이 페이지는 인증 없이 접근 가능하므로 프로젝트 이름으로만 검색
+    project = Project.query.filter_by(name=project_name).first()
     if not project:
         return "Project not found", 404
     scene = Scene.query.get_or_404(scene_id)
@@ -1297,7 +1298,10 @@ def handle_scene_out(data):
 def handle_get_first_scene(data):
     project_name = data.get('project_name')
     if project_name:
-        project = get_project_by_name(project_name, session.get('user_id'))
+        # WebSocket에서는 session에 user_id가 설정되어 있음
+        user_id = session.get('user_id')
+        if user_id:
+            project = get_project_by_name(project_name, user_id)
         if project and project.scenes:
             first_scene = project.scenes[0]
             emit('first_scene', scene_to_dict(first_scene))
@@ -1371,16 +1375,16 @@ def create_sequence_thumbnail(sprite_path, thumb_path, frame_width, size=(150, 1
         print(f"시퀀스 썸네일 생성 실패: {e}")
         return False
 
-def get_thumbnail_path(project_name, filename):
+def get_thumbnail_path(project_name, filename, user_id=None):
     """썸네일 파일 경로 생성"""
-    project_folder = get_project_folder(project_name, session.get('user_id'))
+    project_folder = get_project_folder(project_name, user_id)
     thumb_dir = os.path.join(project_folder, 'library', 'thumbnails')
     os.makedirs(thumb_dir, exist_ok=True)
     return os.path.join(thumb_dir, f"{os.path.splitext(filename)[0]}.webp")
 
-def get_sequence_thumbnail_path(project_name, sequence_name):
+def get_sequence_thumbnail_path(project_name, sequence_name, user_id=None):
     """시퀀스 썸네일 파일 경로 생성"""
-    project_folder = get_project_folder(project_name, session.get('user_id'))
+    project_folder = get_project_folder(project_name, user_id)
     thumb_dir = os.path.join(project_folder, 'library', 'sequence_thumbnails')
     os.makedirs(thumb_dir, exist_ok=True)
     return os.path.join(thumb_dir, f"{sequence_name}.webp")
@@ -1420,7 +1424,7 @@ def upload_image(project_name):
             file.save(file_path)
             
             # 썸네일 생성
-            thumb_path = get_thumbnail_path(project_name, filename)
+            thumb_path = get_thumbnail_path(project_name, filename, current_user.id)
             create_thumbnail(file_path, thumb_path)
             
             uploaded_files.append(filename)
@@ -1611,7 +1615,7 @@ def upload_sequence(project_name):
 
         # 썸네일 생성
         try:
-            thumb_path = get_sequence_thumbnail_path(project_name, sequence_name)
+            thumb_path = get_sequence_thumbnail_path(project_name, sequence_name, current_user.id)
             create_sequence_thumbnail(sprite_path, thumb_path, meta_data.get('frame_width', 150))
         except Exception as e:
             print(f"썸네일 생성 실패: {e}")
@@ -1674,19 +1678,85 @@ def list_project_sequences(project_name):
 def serve_project_image(project_name, filename):
     # URL 디코딩
     decoded_filename = unquote(filename)
-    # 사용자 ID 없이 기본 폴더 구조 사용
-    project_folder = get_project_folder(project_name)
+    
+    # 프로젝트 정보를 가져와서 소유자 ID 확인
+    project = Project.query.filter_by(name=project_name).first()
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+    
+    # 프로젝트 소유자의 폴더 구조 사용
+    project_folder = get_project_folder(project_name, project.user_id)
     images_path = os.path.join(project_folder, 'library', 'images')
+    
+    # 파일이 존재하는지 확인
+    file_path = os.path.join(images_path, decoded_filename)
+    if not os.path.exists(file_path):
+        return jsonify({'error': 'File not found'}), 404
+    
     return send_from_directory(images_path, decoded_filename)
 
 @app.route('/projects/<project_name>/library/sequences/<path:sequence_and_filename>')
 def serve_project_sequence_frame(project_name, sequence_and_filename):
     # sequence_and_filename: '시퀀스명/프레임파일명.png'
     decoded_path = unquote(sequence_and_filename)
-    # 사용자 ID 없이 기본 폴더 구조 사용
-    project_folder = get_project_folder(project_name)
+    
+    # 프로젝트 정보를 가져와서 소유자 ID 확인
+    project = Project.query.filter_by(name=project_name).first()
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+    
+    # 프로젝트 소유자의 폴더 구조 사용
+    project_folder = get_project_folder(project_name, project.user_id)
     sequences_path = os.path.join(project_folder, 'library', 'sequences')
+    
+    # 파일이 존재하는지 확인
+    file_path = os.path.join(sequences_path, decoded_path)
+    if not os.path.exists(file_path):
+        return jsonify({'error': 'File not found'}), 404
+    
     return send_from_directory(sequences_path, decoded_path)
+
+@app.route('/projects/<project_name>/library/thumbnails/<path:filename>')
+def serve_project_thumbnail(project_name, filename):
+    # URL 디코딩
+    decoded_filename = unquote(filename)
+    
+    # 프로젝트 정보를 가져와서 소유자 ID 확인
+    project = Project.query.filter_by(name=project_name).first()
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+    
+    # 프로젝트 소유자의 폴더 구조 사용
+    project_folder = get_project_folder(project_name, project.user_id)
+    thumbnails_path = os.path.join(project_folder, 'library', 'thumbnails')
+    
+    # 파일이 존재하는지 확인
+    file_path = os.path.join(thumbnails_path, decoded_filename)
+    if not os.path.exists(file_path):
+        return jsonify({'error': 'File not found'}), 404
+    
+    return send_from_directory(thumbnails_path, decoded_filename)
+
+@app.route('/projects/<project_name>/library/sequence_thumbnails/<path:filename>')
+def serve_project_sequence_thumbnail(project_name, filename):
+    # URL 디코딩
+    decoded_filename = unquote(filename)
+    
+    # 프로젝트 정보를 가져와서 소유자 ID 확인
+    project = Project.query.filter_by(name=project_name).first()
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+    
+    # 프로젝트 소유자의 폴더 구조 사용
+    project_folder = get_project_folder(project_name, project.user_id)
+    sequence_thumbnails_path = os.path.join(project_folder, 'library', 'sequence_thumbnails')
+    
+    # 파일이 존재하는지 확인
+    file_path = os.path.join(sequence_thumbnails_path, decoded_filename)
+    if not os.path.exists(file_path):
+        return jsonify({'error': 'File not found'}), 404
+    
+    return send_from_directory(sequence_thumbnails_path, decoded_filename)
 
 @app.route('/api/projects/<project_name>/library/images/<filename>', methods=['DELETE'])
 @auth_required('editor')
@@ -1774,8 +1844,7 @@ def preload_project(project_name):
 # --- Main Entry Point ---
 
 if __name__ == '__main__':
-    
-with app.app_context():
+    with app.app_context():
         db.create_all()  # 데이터베이스 테이블 생성
         
         # 기본 관리자 계정 생성
@@ -1818,10 +1887,10 @@ def verify_overlay_token(token):
 @jwt_required()
 def create_overlay_token(project_id):
     """프로젝트의 오버레이 접근 토큰 생성 API"""
-    project = get_project_by_name(project_id) # project_id를 프로젝트 이름으로 변경
+    project = get_project_by_name(project_id)  # project_id를 프로젝트 이름으로 변경
     
     # 프로젝트 접근 권한 확인
-    if not check_project_permission(project_id): # project_id를 프로젝트 이름으로 변경
+    if not check_project_permission(project_id):  # project_id를 프로젝트 이름으로 변경
         return jsonify({'message': '권한이 없습니다.'}), 403
         
     token = generate_overlay_token(project_id)
@@ -1830,5 +1899,5 @@ def create_overlay_token(project_id):
 @app.route('/overlay/<int:project_id>')
 def overlay_page(project_id):
     """오버레이 페이지 렌더링 - 퍼블릭 접근 허용"""
-    project = get_project_by_name(project_id) # project_id를 프로젝트 이름으로 변경
+    project = get_project_by_name(project_id)  # project_id를 프로젝트 이름으로 변경
     return render_template('overlay.html', project=project)
