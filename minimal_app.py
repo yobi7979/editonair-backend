@@ -213,6 +213,59 @@ def delete_project(project_name):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/projects/<project_name>', methods=['GET'])
+def get_project_by_name(project_name):
+    try:
+        # URL 디코딩 처리
+        import urllib.parse
+        decoded_name = urllib.parse.unquote(project_name)
+        
+        project = Project.query.filter_by(name=decoded_name).first()
+        if not project:
+            return jsonify({'error': 'Project not found'}), 404
+            
+        return jsonify({
+            'id': project.id,
+            'name': project.name,
+            'created_at': project.created_at.isoformat() if project.created_at else None,
+            'updated_at': project.updated_at.isoformat() if project.updated_at else None,
+            'scenes': []  # 임시로 빈 배열 반환, 나중에 Scene 모델 구현 시 수정
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/projects/<project_name>/library/images', methods=['GET'])
+def get_project_images(project_name):
+    try:
+        # URL 디코딩 처리
+        import urllib.parse
+        decoded_name = urllib.parse.unquote(project_name)
+        
+        project = Project.query.filter_by(name=decoded_name).first()
+        if not project:
+            return jsonify({'error': 'Project not found'}), 404
+            
+        # 임시로 빈 배열 반환, 나중에 이미지 관리 시스템 구현 시 수정
+        return jsonify([]), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/projects/<project_name>/library/sequences', methods=['GET'])
+def get_project_sequences(project_name):
+    try:
+        # URL 디코딩 처리
+        import urllib.parse
+        decoded_name = urllib.parse.unquote(project_name)
+        
+        project = Project.query.filter_by(name=decoded_name).first()
+        if not project:
+            return jsonify({'error': 'Project not found'}), 404
+            
+        # 임시로 빈 배열 반환, 나중에 시퀀스 관리 시스템 구현 시 수정
+        return jsonify([]), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 # SocketIO events
 @socketio.on('connect')
 def handle_connect():
