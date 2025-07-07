@@ -620,7 +620,21 @@
         // 씬 아웃 이벤트 수신
         socket.on('scene_out', async (data) => {
             console.log('🎭 Scene out event received:', data);
-            console.log('🔄 Loading dummy scene...');
+            
+            if (currentScene && currentScene.objects && currentScene.objects.length > 0) {
+                console.log('🎬 Applying out motions to current scene objects...');
+                
+                try {
+                    // 아웃 모션 실행 및 완료 대기
+                    await motionManager.waitForAllOutMotions();
+                    console.log('✅ All out motions completed');
+                } catch (error) {
+                    console.error('❌ Error during out motions:', error);
+                }
+            }
+            
+            // 아웃 모션 완료 후 더미 씬으로 전환
+            console.log('🔄 Loading dummy scene after out motions...');
             
             try {
                 const response = await fetch('/api/dummy-scene');

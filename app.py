@@ -510,18 +510,57 @@ def handle_join(data):
 
 # --- Project API ---
 
+def validate_project_name(name, user_id=None):
+    """프로젝트 이름 유효성 검사"""
+    errors = []
+    
+    if not name or not name.strip():
+        errors.append('프로젝트 이름을 입력해주세요.')
+        return errors
+    
+    name = name.strip()
+    
+    # 영문 대문자 검사
+    if any(c.isupper() and c.isalpha() for c in name):
+        errors.append('영문 대문자는 사용할 수 없습니다. 소문자를 사용해주세요.')
+    
+    # 띄어쓰기 검사
+    if ' ' in name:
+        errors.append('띄어쓰기는 사용할 수 없습니다. 하이픈(-) 또는 언더스코어(_)를 사용해주세요.')
+    
+    # 중복 이름 검사 (user_id가 제공된 경우)
+    if user_id:
+        # 해당 사용자가 접근 가능한 프로젝트 중에서 중복 체크
+        permissions = ProjectPermission.query.filter_by(user_id=user_id).all()
+        project_ids = [p.project_id for p in permissions]
+        existing_project = Project.query.filter(
+            Project.id.in_(project_ids),
+            Project.name.ilike(name)  # 대소문자 구분 없이 검사
+        ).first()
+        
+        if existing_project:
+            errors.append('이미 존재하는 프로젝트 이름입니다.')
+    
+    return errors
+
 @app.route('/api/projects', methods=['POST'])
 @jwt_required()
 def create_project():
     data = request.get_json()
     if not data or 'name' not in data:
         return jsonify({'message': 'Project name is required'}), 400
-        
-    user_id = get_jwt_identity()
     
+    user_id = get_jwt_identity()
+    project_name = data['name'].strip()
+    
+    # 프로젝트 이름 유효성 검사
+    validation_errors = validate_project_name(project_name, user_id)
+    if validation_errors:
+        return jsonify({'message': ' '.join(validation_errors)}), 400
+        
     # 프로젝트 생성
     project = Project(
-        name=data['name'],
+        name=project_name,
         user_id=user_id
     )
     db.session.add(project)
@@ -572,15 +611,19 @@ def create_project():
 @app.route('/api/projects', methods=['GET'])
 @jwt_required()
 def handle_projects():
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_user = get_current_user_from_token()
     if not current_user:
         return jsonify({'error': 'User not found'}), 404
 
     if request.method == 'POST':
         try:
             data = request.get_json()
-            new_project_name = data.get('name', 'Untitled Project')
+            new_project_name = data.get('name', 'Untitled Project').strip()
+            
+            # 프로젝트 이름 유효성 검사
+            validation_errors = validate_project_name(new_project_name, current_user.id)
+            if validation_errors:
+                return jsonify({'error': ' '.join(validation_errors)}), 400
                 
             new_project = Project(
                 name=new_project_name,
