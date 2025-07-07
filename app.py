@@ -1496,7 +1496,7 @@ if __name__ == '__main__':
     
     # Railway의 PORT 환경 변수 사용, 없으면 5000 사용
     port = int(os.environ.get('PORT', 5000))
-    socketio.run(app, debug=False, host='0.0.0.0', port=port)
+    socketio.run(app, debug=False, host='0.0.0.0', port=port, allow_unsafe_werkzeug=True)
 
 # 임시 접근 토큰 관련 함수
 def generate_overlay_token(project_id):
