@@ -1371,16 +1371,16 @@ def create_sequence_thumbnail(sprite_path, thumb_path, frame_width, size=(150, 1
         print(f"시퀀스 썸네일 생성 실패: {e}")
         return False
 
-def get_thumbnail_path(project_name, filename):
+def get_thumbnail_path(project_name, filename, user_id=None):
     """썸네일 파일 경로 생성"""
-    project_folder = get_project_folder(project_name, session.get('user_id'))
+    project_folder = get_project_folder(project_name, user_id)
     thumb_dir = os.path.join(project_folder, 'library', 'thumbnails')
     os.makedirs(thumb_dir, exist_ok=True)
     return os.path.join(thumb_dir, f"{os.path.splitext(filename)[0]}.webp")
 
-def get_sequence_thumbnail_path(project_name, sequence_name):
+def get_sequence_thumbnail_path(project_name, sequence_name, user_id=None):
     """시퀀스 썸네일 파일 경로 생성"""
-    project_folder = get_project_folder(project_name, session.get('user_id'))
+    project_folder = get_project_folder(project_name, user_id)
     thumb_dir = os.path.join(project_folder, 'library', 'sequence_thumbnails')
     os.makedirs(thumb_dir, exist_ok=True)
     return os.path.join(thumb_dir, f"{sequence_name}.webp")
@@ -1420,7 +1420,7 @@ def upload_image(project_name):
             file.save(file_path)
             
             # 썸네일 생성
-            thumb_path = get_thumbnail_path(project_name, filename)
+            thumb_path = get_thumbnail_path(project_name, filename, current_user.id)
             create_thumbnail(file_path, thumb_path)
             
             uploaded_files.append(filename)
@@ -1611,7 +1611,7 @@ def upload_sequence(project_name):
 
         # 썸네일 생성
         try:
-            thumb_path = get_sequence_thumbnail_path(project_name, sequence_name)
+            thumb_path = get_sequence_thumbnail_path(project_name, sequence_name, current_user.id)
             create_sequence_thumbnail(sprite_path, thumb_path, meta_data.get('frame_width', 150))
         except Exception as e:
             print(f"썸네일 생성 실패: {e}")
@@ -1687,6 +1687,24 @@ def serve_project_sequence_frame(project_name, sequence_and_filename):
     project_folder = get_project_folder(project_name)
     sequences_path = os.path.join(project_folder, 'library', 'sequences')
     return send_from_directory(sequences_path, decoded_path)
+
+@app.route('/projects/<project_name>/library/thumbnails/<path:filename>')
+def serve_project_thumbnail(project_name, filename):
+    # URL 디코딩
+    decoded_filename = unquote(filename)
+    # 사용자 ID 없이 기본 폴더 구조 사용
+    project_folder = get_project_folder(project_name)
+    thumbnails_path = os.path.join(project_folder, 'library', 'thumbnails')
+    return send_from_directory(thumbnails_path, decoded_filename)
+
+@app.route('/projects/<project_name>/library/sequence_thumbnails/<path:filename>')
+def serve_project_sequence_thumbnail(project_name, filename):
+    # URL 디코딩
+    decoded_filename = unquote(filename)
+    # 사용자 ID 없이 기본 폴더 구조 사용
+    project_folder = get_project_folder(project_name)
+    sequence_thumbnails_path = os.path.join(project_folder, 'library', 'sequence_thumbnails')
+    return send_from_directory(sequence_thumbnails_path, decoded_filename)
 
 @app.route('/api/projects/<project_name>/library/images/<filename>', methods=['DELETE'])
 @auth_required('editor')
