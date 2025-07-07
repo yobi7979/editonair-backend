@@ -484,13 +484,36 @@
         const projectName = '{{ project.name }}';
         {% if scene %}
         const initialScene = {{ scene|tojson }};
-        console.log('Initial scene loaded:', initialScene);
-        currentScene = initialScene;
-        // 초기 씬 렌더링 (인모션 적용)
-        motionManager.updateScene(initialScene, false);
+        console.log('Initial scene data available:', initialScene);
+        // 초기에는 씬을 렌더링하지 않고 데이터만 저장
+        // currentScene = initialScene; // 주석 처리
+        // motionManager.updateScene(initialScene, false); // 주석 처리
         {% else %}
         console.log('No initial scene provided');
         {% endif %}
+
+        // 초기에는 더미 씬으로 시작
+        console.log('🔄 Loading initial dummy scene...');
+        fetch('/api/dummy-scene')
+            .then(response => response.json())
+            .then(dummyScene => {
+                console.log('📥 Initial dummy scene loaded:', dummyScene);
+                currentScene = dummyScene;
+                motionManager.updateScene(dummyScene, true); // skipInMotion = true
+                console.log('✅ Initial dummy scene applied - blank overlay ready');
+            })
+            .catch(error => {
+                console.error('❌ Error loading initial dummy scene:', error);
+                // 더미 씬 로드 실패 시 빈 씬 생성
+                const emptyScene = {
+                    id: 0,
+                    name: 'Empty Scene',
+                    objects: []
+                };
+                currentScene = emptyScene;
+                motionManager.updateScene(emptyScene, true);
+                console.log('✅ Empty scene applied as fallback');
+            });
 
         // 웹소켓 이벤트 핸들러
         socket.on('connect', () => {
@@ -655,6 +678,15 @@
                 console.error('❌ Error loading dummy scene:', error);
             }
         });
+
+        // 연결 상태를 수동으로 체크하는 함수를 전역으로 노출
+        window.checkWebSocketStatus = checkConnectionStatus;
+        
+        // 페이지 로드 완료 후 초기 연결 상태 체크
+        setTimeout(() => {
+            console.log('🔍 Initial connection status check:');
+            checkConnectionStatus();
+        }, 1000);
 
         // 객체 생성 함수
         function createObjectElement(obj) {
