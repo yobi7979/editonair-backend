@@ -2096,6 +2096,9 @@ def restore_database():
         backup_content = file.read().decode('utf-8')
         
         try:
+            # SQLAlchemy text import 확인
+            from sqlalchemy import text
+            
             # 기존 데이터 삭제 (순서 중요: 외래키 제약조건 고려)
             db.session.execute(text("DELETE FROM objects;"))
             db.session.execute(text("DELETE FROM scene;"))
