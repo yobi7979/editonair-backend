@@ -1296,6 +1296,147 @@ def delete_object(object_id):
     db.session.commit()
     return jsonify({'message': 'Object deleted successfully'}), 200
 
+@app.route('/api/objects/<int:object_id>/change-id', methods=['PUT'])
+@jwt_required()
+def change_object_id(object_id):
+    """Changes an object's ID."""
+    current_user = get_current_user_from_token()
+    if not current_user:
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    obj = Object.query.get_or_404(object_id)
+    
+    # 편집 권한 확인
+    if not check_project_permission(current_user.id, obj.scene.project_id, 'editor'):
+        return jsonify({'error': 'Permission denied'}), 403
+    
+    data = request.get_json()
+    new_id = data.get('new_id')
+    
+    if not new_id:
+        return jsonify({'error': 'new_id is required'}), 400
+    
+    try:
+        new_id = int(new_id)
+    except ValueError:
+        return jsonify({'error': 'new_id must be a valid integer'}), 400
+    
+    # 새 ID가 현재 ID와 같으면 변경하지 않음
+    if new_id == object_id:
+        return jsonify({'message': 'ID is already the same'}), 200
+    
+    # 중복 ID 체크
+    existing_obj = Object.query.get(new_id)
+    if existing_obj:
+        # 중복된 객체가 있는 씬 정보 반환
+        scene = existing_obj.scene
+        project = scene.project
+        return jsonify({
+            'error': 'ID already exists',
+            'conflicting_object': {
+                'id': existing_obj.id,
+                'name': existing_obj.name,
+                'scene_name': scene.name,
+                'project_name': project.name
+            }
+        }), 409
+    
+    try:
+        # 기존 객체 데이터 백업
+        old_data = {
+            'name': obj.name,
+            'type': obj.type,
+            'order': obj.order,
+            'properties': obj.properties,
+            'in_motion': obj.in_motion,
+            'out_motion': obj.out_motion,
+            'timing': obj.timing,
+            'scene_id': obj.scene_id,
+            'created_at': obj.created_at,
+            'updated_at': obj.updated_at
+        }
+        
+        # 기존 객체 삭제
+        db.session.delete(obj)
+        db.session.flush()  # 삭제를 즉시 반영
+        
+        # 새 ID로 객체 생성 (ID를 수동으로 지정)
+        # SQLAlchemy INSERT를 사용하여 ID 수동 지정
+        from sqlalchemy import text
+        
+        insert_stmt = text("""
+            INSERT INTO objects (id, name, type, "order", properties, in_motion, out_motion, timing, scene_id, created_at, updated_at)
+            VALUES (:id, :name, :type, :order, :properties, :in_motion, :out_motion, :timing, :scene_id, :created_at, :updated_at)
+        """)
+        
+        db.session.execute(insert_stmt, {
+            'id': new_id,
+            'name': old_data['name'],
+            'type': old_data['type'],
+            'order': old_data['order'],
+            'properties': old_data['properties'],
+            'in_motion': old_data['in_motion'],
+            'out_motion': old_data['out_motion'],
+            'timing': old_data['timing'],
+            'scene_id': old_data['scene_id'],
+            'created_at': old_data['created_at'],
+            'updated_at': datetime.utcnow()
+        })
+        
+        db.session.commit()
+        
+        # 새로 생성된 객체 조회
+        new_obj = Object.query.get(new_id)
+        
+        return jsonify({
+            'message': 'Object ID changed successfully',
+            'object': object_to_dict(new_obj)
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to change ID: {str(e)}'}), 500
+
+@app.route('/api/objects/check-id/<int:new_id>', methods=['GET'])
+@jwt_required()
+def check_object_id(new_id):
+    """Checks if an object ID is available."""
+    current_user = get_current_user_from_token()
+    if not current_user:
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    existing_obj = Object.query.get(new_id)
+    
+    if existing_obj:
+        # 해당 객체가 속한 씬과 프로젝트 정보 반환
+        scene = existing_obj.scene
+        project = scene.project
+        
+        # 사용자가 해당 프로젝트에 접근 권한이 있는지 확인
+        if check_project_permission(current_user.id, project.id, 'viewer'):
+            return jsonify({
+                'available': False,
+                'conflicting_object': {
+                    'id': existing_obj.id,
+                    'name': existing_obj.name,
+                    'scene_name': scene.name,
+                    'project_name': project.name
+                }
+            }), 200
+        else:
+            # 권한이 없는 프로젝트의 객체는 단순히 사용 불가로 표시
+            return jsonify({
+                'available': False,
+                'conflicting_object': {
+                    'id': existing_obj.id,
+                    'name': '(접근 권한 없음)',
+                    'scene_name': '(접근 권한 없음)',
+                    'project_name': '(접근 권한 없음)'
+                }
+            }), 200
+    
+    return jsonify({'available': True}), 200
+
 @app.route('/api/scenes/<int:scene_id>/object-orders', methods=['PUT'])
 @jwt_required()
 def update_object_orders(scene_id):
