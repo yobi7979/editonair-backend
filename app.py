@@ -797,10 +797,11 @@ def handle_project_detail(project_name):
     print(f"DEBUG: project_name={project_name}, admin_token={admin_token}, owner_id={owner_id}")
     
     if admin_token and owner_id:
-        # 관리자 토큰 검증
+        # 관리자 토큰 검증 (PyJWT 사용)
         try:
-            decoded_token = jwt.decode(admin_token, app.config['SECRET_KEY'], algorithms=['HS256'])
-            admin_user = User.query.get(decoded_token['user_id'])
+            import jwt as pyjwt
+            decoded_token = pyjwt.decode(admin_token, app.config['JWT_SECRET_KEY'], algorithms=['HS256'])
+            admin_user = User.query.get(decoded_token['sub'])  # 'sub'는 user_id
             print(f"DEBUG: admin_user={admin_user}, username={admin_user.username if admin_user else None}")
             if admin_user and admin_user.username == 'admin':
                 is_admin_mode = True
@@ -931,11 +932,13 @@ def handle_scene(scene_id):
         
         if admin_token and owner_id:
             try:
-                decoded_token = jwt.decode(admin_token, app.config['SECRET_KEY'], algorithms=['HS256'])
-                admin_user = User.query.get(decoded_token['user_id'])
+                import jwt as pyjwt
+                decoded_token = pyjwt.decode(admin_token, app.config['JWT_SECRET_KEY'], algorithms=['HS256'])
+                admin_user = User.query.get(decoded_token['sub'])
                 if admin_user and admin_user.username == 'admin':
                     is_admin_mode = True
-            except:
+            except Exception as e:
+                print(f"DEBUG: Scene admin token decode error: {e}")
                 pass
         
         # 씬의 프로젝트에 대한 권한 확인 (관리자 모드가 아닐 때만)
