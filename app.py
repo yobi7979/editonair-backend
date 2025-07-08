@@ -797,11 +797,10 @@ def handle_project_detail(project_name):
     print(f"DEBUG: project_name={project_name}, admin_token={admin_token}, owner_id={owner_id}")
     
     if admin_token and owner_id:
-        # 관리자 토큰 검증 (PyJWT 사용)
+        # 관리자 토큰 검증
         try:
-            import jwt as pyjwt
-            decoded_token = pyjwt.decode(admin_token, app.config['JWT_SECRET_KEY'], algorithms=['HS256'])
-            admin_user = User.query.get(decoded_token['sub'])  # 'sub'는 user_id
+            decoded_token = jwt.decode(admin_token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            admin_user = User.query.get(decoded_token['user_id'])
             print(f"DEBUG: admin_user={admin_user}, username={admin_user.username if admin_user else None}")
             if admin_user and admin_user.username == 'admin':
                 is_admin_mode = True
@@ -932,13 +931,11 @@ def handle_scene(scene_id):
         
         if admin_token and owner_id:
             try:
-                import jwt as pyjwt
-                decoded_token = pyjwt.decode(admin_token, app.config['JWT_SECRET_KEY'], algorithms=['HS256'])
-                admin_user = User.query.get(decoded_token['sub'])
+                decoded_token = jwt.decode(admin_token, app.config['SECRET_KEY'], algorithms=['HS256'])
+                admin_user = User.query.get(decoded_token['user_id'])
                 if admin_user and admin_user.username == 'admin':
                     is_admin_mode = True
-            except Exception as e:
-                print(f"DEBUG: Scene admin token decode error: {e}")
+            except:
                 pass
         
         # 씬의 프로젝트에 대한 권한 확인 (관리자 모드가 아닐 때만)
@@ -1752,44 +1749,17 @@ def upload_sequence(project_name):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/projects/<project_name>/library/images', methods=['GET'])
+@auth_required('viewer')
 def list_project_images(project_name):
     current_user = get_current_user_from_token()
-    if not current_user:
-        return jsonify({'error': 'Authentication required'}), 401
-    
-    # 관리자 모드 확인
-    admin_token = request.headers.get('X-Admin-Token')
-    owner_id = request.headers.get('X-Owner-Id')
-    is_admin_mode = False
-    
-    if admin_token and owner_id:
-        try:
-            payload = jwt.decode(admin_token, app.config['JWT_SECRET_KEY'], algorithms=['HS256'])
-            admin_user_id = payload.get('sub')
-            admin_user = User.query.get(admin_user_id)
-            if admin_user and admin_user.username == 'admin':
-                is_admin_mode = True
-        except Exception as e:
-            print(f"Admin token validation error: {e}")
-    
-    if is_admin_mode:
-        # 관리자 모드: 지정된 소유자 ID로 조회
-        project = get_project_by_name(project_name, int(owner_id))
-        project_folder = get_project_folder(project_name, int(owner_id))
-    else:
-        # 일반 모드: 현재 사용자 ID로 조회
-        project = get_project_by_name(project_name, current_user.id)
-        if not project:
-            return jsonify({'error': 'Project not found'}), 404
-        
-        # 프로젝트 접근 권한 확인
-        if not check_project_permission(current_user.id, project.id, 'viewer'):
-            return jsonify({'error': 'Permission denied'}), 403
-        project_folder = get_project_folder(project_name, current_user.id)
-    
+    project = get_project_by_name(project_name, current_user.id)
     if not project:
         return jsonify({'error': 'Project not found'}), 404
     
+    # 프로젝트 접근 권한 확인
+    if not check_project_permission(current_user.id, project.id, 'viewer'):
+        return jsonify({'error': 'Permission denied'}), 403
+    project_folder = get_project_folder(project_name, current_user.id)
     images_path = os.path.join(project_folder, 'library', 'images')
     if not os.path.exists(images_path):
         return jsonify([])
@@ -1797,44 +1767,17 @@ def list_project_images(project_name):
     return jsonify(files)
 
 @app.route('/api/projects/<project_name>/library/sequences', methods=['GET'])
+@auth_required('viewer')
 def list_project_sequences(project_name):
     current_user = get_current_user_from_token()
-    if not current_user:
-        return jsonify({'error': 'Authentication required'}), 401
-    
-    # 관리자 모드 확인
-    admin_token = request.headers.get('X-Admin-Token')
-    owner_id = request.headers.get('X-Owner-Id')
-    is_admin_mode = False
-    
-    if admin_token and owner_id:
-        try:
-            payload = jwt.decode(admin_token, app.config['JWT_SECRET_KEY'], algorithms=['HS256'])
-            admin_user_id = payload.get('sub')
-            admin_user = User.query.get(admin_user_id)
-            if admin_user and admin_user.username == 'admin':
-                is_admin_mode = True
-        except Exception as e:
-            print(f"Admin token validation error: {e}")
-    
-    if is_admin_mode:
-        # 관리자 모드: 지정된 소유자 ID로 조회
-        project = get_project_by_name(project_name, int(owner_id))
-        project_folder = get_project_folder(project_name, int(owner_id))
-    else:
-        # 일반 모드: 현재 사용자 ID로 조회
-        project = get_project_by_name(project_name, current_user.id)
-        if not project:
-            return jsonify({'error': 'Project not found'}), 404
-        
-        # 프로젝트 접근 권한 확인
-        if not check_project_permission(current_user.id, project.id, 'viewer'):
-            return jsonify({'error': 'Permission denied'}), 403
-        project_folder = get_project_folder(project_name, current_user.id)
-    
+    project = get_project_by_name(project_name, current_user.id)
     if not project:
         return jsonify({'error': 'Project not found'}), 404
     
+    # 프로젝트 접근 권한 확인
+    if not check_project_permission(current_user.id, project.id, 'viewer'):
+        return jsonify({'error': 'Permission denied'}), 403
+    project_folder = get_project_folder(project_name, current_user.id)
     sequences_path = os.path.join(project_folder, 'library', 'sequences')
     if not os.path.exists(sequences_path):
         return jsonify([])
