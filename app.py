@@ -1128,35 +1128,7 @@ def push_scene(scene_id):
         if not check_project_permission(current_user.id, scene.project_id, 'editor'):
             return jsonify({'error': 'Permission denied'}), 403
         
-        # 💾 씬 송출 전에 라이브 상태를 실제 씬 데이터에 저장
-        project_name = scene.project.name
-        project_live_state = live_state_manager.get_project_live_state(project_name)
-        
-        if project_live_state:
-            print(f"🔄 씬 송출 전 라이브 상태를 DB에 저장 중...")
-            saved_count = 0
-            
-            for object_id, live_data in project_live_state.items():
-                obj = Object.query.filter_by(id=object_id, scene_id=scene_id).first()
-                if obj:
-                    # 현재 객체의 properties 읽기
-                    current_properties = json.loads(obj.properties)
-                    live_properties = live_data.get('properties', {})
-                    
-                    # 라이브 상태를 실제 properties에 병합
-                    updated_properties = {**current_properties, **live_properties}
-                    obj.properties = json.dumps(updated_properties)
-                    saved_count += 1
-                    
-                    print(f"📝 객체 {object_id} 라이브 상태 저장: {live_properties}")
-            
-            if saved_count > 0:
-                db.session.commit()
-                print(f"✅ {saved_count}개 객체의 라이브 상태가 씬 데이터에 저장됨")
-            else:
-                print("ℹ️ 이 씬에 해당하는 라이브 상태 없음")
-        else:
-            print("ℹ️ 프로젝트에 라이브 상태 없음")
+
         
         set_user_pushed_scene(current_user.id, scene_id)
         print(f"Scene {scene_id} pushed successfully")
@@ -1620,13 +1592,40 @@ def get_dummy_scene():
 
 @app.route('/api/overlay/scenes/<int:scene_id>')
 def get_overlay_scene(scene_id):
-    """오버레이 페이지 전용 씬 조회 API (인증 불필요)"""
+    """오버레이 페이지 전용 씬 조회 API (인증 불필요, 라이브 상태 병합)"""
     try:
         scene = Scene.query.get_or_404(scene_id)
-        print(f"Overlay scene request for scene {scene_id}: {scene.name}")
-        return jsonify(scene_to_dict(scene))
+        project_name = scene.project.name
+        
+        print(f"🔍 오버레이 씬 요청: {scene_id} ({scene.name}) - 프로젝트: {project_name}")
+        
+        # 원본 씬 데이터 가져오기
+        scene_data = scene_to_dict(scene)
+        
+        # 라이브 상태 가져오기
+        project_live_state = live_state_manager.get_project_live_state(project_name)
+        
+        if project_live_state:
+            print(f"🔄 라이브 상태 발견: {len(project_live_state)}개 객체")
+            
+            # 각 객체에 라이브 상태 병합
+            for obj_data in scene_data['objects']:
+                obj_id = obj_data['id']
+                if obj_id in project_live_state:
+                    live_properties = project_live_state[obj_id].get('properties', {})
+                    if live_properties:
+                        # 원본 properties와 라이브 properties 병합
+                        merged_properties = {**obj_data['properties'], **live_properties}
+                        obj_data['properties'] = merged_properties
+                        print(f"📝 객체 {obj_id} 라이브 상태 병합: {live_properties}")
+            
+            print(f"✅ 라이브 상태 병합 완료")
+        else:
+            print(f"ℹ️ 라이브 상태 없음")
+        
+        return jsonify(scene_data)
     except Exception as e:
-        print(f"Error in get_overlay_scene: {str(e)}")
+        print(f"❌ 오버레이 씬 조회 오류: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 def create_thumbnail(image_path, thumb_path, size=(150, 150)):
