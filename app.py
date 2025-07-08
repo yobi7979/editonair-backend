@@ -2473,12 +2473,24 @@ def update_text_live(object_id):
         live_state_manager.update_object_property(project_name, object_id, 'content', content)
         
         # 소켓으로 실시간 업데이트 전송
-        socketio.emit('object_live_update', {
+        object_update_data = {
             'object_id': object_id,
             'property': 'content',
             'value': content,
             'timestamp': datetime.now().isoformat()
-        }, room=f'project_{project_name}')
+        }
+        
+        # 프로젝트 룸으로 전송
+        socketio.emit('object_live_update', object_update_data, room=f'project_{project_name}')
+        
+        # 오버레이 페이지를 위해 모든 사용자의 개별 룸으로도 전송
+        scene = obj.scene
+        project = scene.project
+        if project:
+            permissions = ProjectPermission.query.filter_by(project_id=project.id).all()
+            for permission in permissions:
+                user_room = f'user_{permission.user_id}'
+                socketio.emit('object_live_update', object_update_data, room=user_room)
         
         return jsonify({
             'message': '텍스트가 업데이트되었습니다.',
@@ -2527,6 +2539,17 @@ def scene_live_on(scene_id):
         socketio.emit('scene_live_update', update_data, room=room_name)
         print(f"🚀 Socket.io 이벤트 전송 완료")
         
+        # 오버레이 페이지를 위해 모든 사용자의 개별 룸으로도 전송
+        project = Project.query.get(scene.project_id)
+        if project:
+            # 해당 프로젝트에 권한이 있는 모든 사용자들의 룸으로도 이벤트 전송
+            permissions = ProjectPermission.query.filter_by(project_id=project.id).all()
+            for permission in permissions:
+                user_room = f'user_{permission.user_id}'
+                print(f"🚀 오버레이용 송출: {user_room} 룸으로 scene_live_update 이벤트 전송")
+                socketio.emit('scene_live_update', update_data, room=user_room)
+            print(f"🚀 모든 사용자 룸으로 이벤트 전송 완료")
+        
         return jsonify({
             'message': f'씬 "{scene.name}"이 송출되었습니다.',
             'scene_id': scene_id,
@@ -2568,6 +2591,17 @@ def scene_live_off(scene_id):
         
         socketio.emit('scene_live_update', update_data, room=room_name)
         print(f"🛑 Socket.io 이벤트 전송 완료")
+        
+        # 오버레이 페이지를 위해 모든 사용자의 개별 룸으로도 전송
+        project = Project.query.get(scene.project_id)
+        if project:
+            # 해당 프로젝트에 권한이 있는 모든 사용자들의 룸으로도 이벤트 전송
+            permissions = ProjectPermission.query.filter_by(project_id=project.id).all()
+            for permission in permissions:
+                user_room = f'user_{permission.user_id}'
+                print(f"🛑 오버레이용 아웃: {user_room} 룸으로 scene_live_update 이벤트 전송")
+                socketio.emit('scene_live_update', update_data, room=user_room)
+            print(f"🛑 모든 사용자 룸으로 이벤트 전송 완료")
         
         return jsonify({
             'message': f'씬 "{scene.name}"이 아웃되었습니다.',
@@ -2612,12 +2646,24 @@ def control_timer(object_id, action):
         live_state_manager.update_object_property(project_name, object_id, 'content', timer_state['current_time'])
         
         # 소켓으로 실시간 업데이트 전송
-        socketio.emit('timer_update', {
+        timer_update_data = {
             'object_id': object_id,
             'action': action,
             'timer_state': timer_state,
             'timestamp': datetime.now().isoformat()
-        }, room=f'project_{project_name}')
+        }
+        
+        # 프로젝트 룸으로 전송
+        socketio.emit('timer_update', timer_update_data, room=f'project_{project_name}')
+        
+        # 오버레이 페이지를 위해 모든 사용자의 개별 룸으로도 전송
+        scene = obj.scene
+        project = scene.project
+        if project:
+            permissions = ProjectPermission.query.filter_by(project_id=project.id).all()
+            for permission in permissions:
+                user_room = f'user_{permission.user_id}'
+                socketio.emit('timer_update', timer_update_data, room=user_room)
         
         return jsonify({
             'message': f'타이머 {action} 완료',
@@ -2637,10 +2683,23 @@ def clear_project_live_state(project_name):
         live_state_manager.clear_project_live_state(project_name)
         
         # 소켓으로 초기화 알림
-        socketio.emit('live_state_cleared', {
+        clear_data = {
             'project_name': project_name,
             'timestamp': datetime.now().isoformat()
-        }, room=f'project_{project_name}')
+        }
+        
+        # 프로젝트 룸으로 전송
+        socketio.emit('live_state_cleared', clear_data, room=f'project_{project_name}')
+        
+        # 오버레이 페이지를 위해 모든 사용자의 개별 룸으로도 전송
+        current_user = get_current_user_from_token()
+        if current_user:
+            project = get_project_by_name(project_name, current_user.id)
+            if project:
+                permissions = ProjectPermission.query.filter_by(project_id=project.id).all()
+                for permission in permissions:
+                    user_room = f'user_{permission.user_id}'
+                    socketio.emit('live_state_cleared', clear_data, room=user_room)
         
         return jsonify({
             'message': f'프로젝트 "{project_name}"의 라이브 상태가 초기화되었습니다.'
