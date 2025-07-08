@@ -1128,6 +1128,36 @@ def push_scene(scene_id):
         if not check_project_permission(current_user.id, scene.project_id, 'editor'):
             return jsonify({'error': 'Permission denied'}), 403
         
+        # 💾 씬 송출 전에 라이브 상태를 실제 씬 데이터에 저장
+        project_name = scene.project.name
+        project_live_state = live_state_manager.get_project_live_state(project_name)
+        
+        if project_live_state:
+            print(f"🔄 씬 송출 전 라이브 상태를 DB에 저장 중...")
+            saved_count = 0
+            
+            for object_id, live_data in project_live_state.items():
+                obj = Object.query.filter_by(id=object_id, scene_id=scene_id).first()
+                if obj:
+                    # 현재 객체의 properties 읽기
+                    current_properties = json.loads(obj.properties)
+                    live_properties = live_data.get('properties', {})
+                    
+                    # 라이브 상태를 실제 properties에 병합
+                    updated_properties = {**current_properties, **live_properties}
+                    obj.properties = json.dumps(updated_properties)
+                    saved_count += 1
+                    
+                    print(f"📝 객체 {object_id} 라이브 상태 저장: {live_properties}")
+            
+            if saved_count > 0:
+                db.session.commit()
+                print(f"✅ {saved_count}개 객체의 라이브 상태가 씬 데이터에 저장됨")
+            else:
+                print("ℹ️ 이 씬에 해당하는 라이브 상태 없음")
+        else:
+            print("ℹ️ 프로젝트에 라이브 상태 없음")
+        
         set_user_pushed_scene(current_user.id, scene_id)
         print(f"Scene {scene_id} pushed successfully")
         # 사용자별 룸으로 브로드캐스트
