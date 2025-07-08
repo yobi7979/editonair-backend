@@ -107,88 +107,88 @@
             to { opacity: 0; }
         }
         @keyframes slideUpIn {
-            from { transform: translateY(100%); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
+            from { transform: translateY(100%) rotate(var(--rotation, 0deg)); opacity: 0; }
+            to { transform: translateY(0) rotate(var(--rotation, 0deg)); opacity: 1; }
         }
         @keyframes slideUpOut {
-            from { transform: translateY(0); opacity: 1; }
-            to { transform: translateY(-100%); opacity: 0; }
+            from { transform: translateY(0) rotate(var(--rotation, 0deg)); opacity: 1; }
+            to { transform: translateY(-100%) rotate(var(--rotation, 0deg)); opacity: 0; }
         }
         @keyframes slideDownIn {
-            from { transform: translateY(-100%); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
+            from { transform: translateY(-100%) rotate(var(--rotation, 0deg)); opacity: 0; }
+            to { transform: translateY(0) rotate(var(--rotation, 0deg)); opacity: 1; }
         }
         @keyframes slideDownOut {
-            from { transform: translateY(0); opacity: 1; }
-            to { transform: translateY(100%); opacity: 0; }
+            from { transform: translateY(0) rotate(var(--rotation, 0deg)); opacity: 1; }
+            to { transform: translateY(100%) rotate(var(--rotation, 0deg)); opacity: 0; }
         }
         @keyframes slideLeftIn {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
+            from { transform: translateX(100%) rotate(var(--rotation, 0deg)); opacity: 0; }
+            to { transform: translateX(0) rotate(var(--rotation, 0deg)); opacity: 1; }
         }
         @keyframes slideLeftOut {
-            from { transform: translateX(0); opacity: 1; }
-            to { transform: translateX(-100%); opacity: 0; }
+            from { transform: translateX(0) rotate(var(--rotation, 0deg)); opacity: 1; }
+            to { transform: translateX(-100%) rotate(var(--rotation, 0deg)); opacity: 0; }
         }
         @keyframes slideRightIn {
-            from { transform: translateX(-100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
+            from { transform: translateX(-100%) rotate(var(--rotation, 0deg)); opacity: 0; }
+            to { transform: translateX(0) rotate(var(--rotation, 0deg)); opacity: 1; }
         }
         @keyframes slideRightOut {
-            from { transform: translateX(0); opacity: 1; }
-            to { transform: translateX(100%); opacity: 0; }
+            from { transform: translateX(0) rotate(var(--rotation, 0deg)); opacity: 1; }
+            to { transform: translateX(100%) rotate(var(--rotation, 0deg)); opacity: 0; }
         }
         @keyframes scaleIn {
-            from { transform: scale(0); opacity: 0; }
-            to { transform: scale(1); opacity: 1; }
+            from { transform: scale(0) rotate(var(--rotation, 0deg)); opacity: 0; }
+            to { transform: scale(1) rotate(var(--rotation, 0deg)); opacity: 1; }
         }
         @keyframes scaleOut {
-            from { transform: scale(1); opacity: 1; }
-            to { transform: scale(0); opacity: 0; }
+            from { transform: scale(1) rotate(var(--rotation, 0deg)); opacity: 1; }
+            to { transform: scale(0) rotate(var(--rotation, 0deg)); opacity: 0; }
         }
         @keyframes rotateIn {
-            from { transform: rotate(360deg); opacity: 0; }
-            to { transform: rotate(0deg); opacity: 1; }
+            from { transform: rotate(calc(var(--rotation, 0deg) + 360deg)); opacity: 0; }
+            to { transform: rotate(var(--rotation, 0deg)); opacity: 1; }
         }
         @keyframes rotateOut {
-            from { transform: rotate(0deg); opacity: 1; }
-            to { transform: rotate(360deg); opacity: 0; }
+            from { transform: rotate(var(--rotation, 0deg)); opacity: 1; }
+            to { transform: rotate(calc(var(--rotation, 0deg) + 360deg)); opacity: 0; }
         }
         @keyframes bounceIn {
-            0% { transform: translateY(100%); opacity: 0; }
-            50% { transform: translateY(-20%); opacity: 1; }
-            70% { transform: translateY(10%); opacity: 1; }
-            85% { transform: translateY(-5%); opacity: 1; }
-            100% { transform: translateY(0); opacity: 1; }
+            0% { transform: translateY(100%) rotate(var(--rotation, 0deg)); opacity: 0; }
+            50% { transform: translateY(-20%) rotate(var(--rotation, 0deg)); opacity: 1; }
+            70% { transform: translateY(10%) rotate(var(--rotation, 0deg)); opacity: 1; }
+            85% { transform: translateY(-5%) rotate(var(--rotation, 0deg)); opacity: 1; }
+            100% { transform: translateY(0) rotate(var(--rotation, 0deg)); opacity: 1; }
         }
         @keyframes bounceOut {
-            0% { transform: translateY(0); opacity: 1; }
-            50% { transform: translateY(-20%); opacity: 1; }
-            70% { transform: translateY(10%); opacity: 1; }
-            85% { transform: translateY(-5%); opacity: 1; }
-            100% { transform: translateY(100%); opacity: 0; }
+            0% { transform: translateY(0) rotate(var(--rotation, 0deg)); opacity: 1; }
+            50% { transform: translateY(-20%) rotate(var(--rotation, 0deg)); opacity: 1; }
+            70% { transform: translateY(10%) rotate(var(--rotation, 0deg)); opacity: 1; }
+            85% { transform: translateY(-5%) rotate(var(--rotation, 0deg)); opacity: 1; }
+            100% { transform: translateY(100%) rotate(var(--rotation, 0deg)); opacity: 0; }
         }
         @keyframes elasticIn {
-            0% { transform: scale(0.3); opacity: 0; }
-            50% { transform: scale(1.2); opacity: 1; }
-            70% { transform: scale(0.9); opacity: 1; }
-            85% { transform: scale(1.05); opacity: 1; }
-            100% { transform: scale(1); opacity: 1; }
+            0% { transform: scale(0.3) rotate(var(--rotation, 0deg)); opacity: 0; }
+            50% { transform: scale(1.2) rotate(var(--rotation, 0deg)); opacity: 1; }
+            70% { transform: scale(0.9) rotate(var(--rotation, 0deg)); opacity: 1; }
+            85% { transform: scale(1.05) rotate(var(--rotation, 0deg)); opacity: 1; }
+            100% { transform: scale(1) rotate(var(--rotation, 0deg)); opacity: 1; }
         }
         @keyframes elasticOut {
-            0% { transform: scale(1); opacity: 1; }
-            50% { transform: scale(1.2); opacity: 1; }
-            70% { transform: scale(0.9); opacity: 1; }
-            85% { transform: scale(1.05); opacity: 1; }
-            100% { transform: scale(0.3); opacity: 0; }
+            0% { transform: scale(1) rotate(var(--rotation, 0deg)); opacity: 1; }
+            50% { transform: scale(1.2) rotate(var(--rotation, 0deg)); opacity: 1; }
+            70% { transform: scale(0.9) rotate(var(--rotation, 0deg)); opacity: 1; }
+            85% { transform: scale(1.05) rotate(var(--rotation, 0deg)); opacity: 1; }
+            100% { transform: scale(0.3) rotate(var(--rotation, 0deg)); opacity: 0; }
         }
         @keyframes zoomIn {
-            from { transform: scale(0); opacity: 0; }
-            to { transform: scale(1); opacity: 1; }
+            from { transform: scale(0) rotate(var(--rotation, 0deg)); opacity: 0; }
+            to { transform: scale(1) rotate(var(--rotation, 0deg)); opacity: 1; }
         }
         @keyframes zoomOut {
-            from { transform: scale(1); opacity: 1; }
-            to { transform: scale(0); opacity: 0; }
+            from { transform: scale(1) rotate(var(--rotation, 0deg)); opacity: 1; }
+            to { transform: scale(0) rotate(var(--rotation, 0deg)); opacity: 0; }
         }
     </style>
 </head>
@@ -261,13 +261,12 @@
                         element.classList.remove(className);
                         element.style.animation = 'none';
                         
-                        // 오브젝트의 원래 rotation transform을 다시 적용
+                        // 회전값을 CSS 변수로 설정하고 최종 상태 적용
                         if (obj.properties.rotation !== undefined && obj.properties.rotation !== null) {
-                            const rotationTransform = `rotate(${obj.properties.rotation}deg)`;
-                            element.style.transform = rotationTransform;
-                            element.style.setProperty('transform', rotationTransform, 'important');
-                        } else if (style.transform) {
-                            element.style.transform = style.transform;
+                            element.style.setProperty('--rotation', `${obj.properties.rotation}deg`);
+                            element.style.transform = `rotate(${obj.properties.rotation}deg)`;
+                        } else {
+                            element.style.setProperty('--rotation', '0deg');
                         }
                         
                         if (style.opacity) element.style.opacity = style.opacity;
@@ -363,37 +362,43 @@
                 let easing = motion.easing || 'ease';
                 let transform = '';
                 let opacity = '';
+                
+                // 회전값을 항상 포함하는 transform 생성
+                const rotation = 'rotate(var(--rotation, 0deg))';
+                
                 switch (type) {
                     case 'none':
                     case 'fade':
                         opacity = isIn ? '1' : '0';
+                        transform = rotation; // 회전값만 적용
                         break;
                     case 'slide_up':
-                        transform = isIn ? 'translateY(0)' : 'translateY(100%)';
+                        transform = isIn ? `translateY(0) ${rotation}` : `translateY(100%) ${rotation}`;
                         opacity = isIn ? '0' : '1';
                         break;
                     case 'slide_down':
-                        transform = isIn ? 'translateY(0)' : 'translateY(-100%)';
+                        transform = isIn ? `translateY(0) ${rotation}` : `translateY(-100%) ${rotation}`;
                         opacity = isIn ? '0' : '1';
                         break;
                     case 'slide_left':
-                        transform = isIn ? 'translateX(0)' : 'translateX(100%)';
+                        transform = isIn ? `translateX(0) ${rotation}` : `translateX(100%) ${rotation}`;
                         opacity = isIn ? '0' : '1';
                         break;
                     case 'slide_right':
-                        transform = isIn ? 'translateX(0)' : 'translateX(-100%)';
+                        transform = isIn ? `translateX(0) ${rotation}` : `translateX(-100%) ${rotation}`;
                         opacity = isIn ? '0' : '1';
                         break;
                     case 'zoom_in':
-                        transform = isIn ? 'scale(1)' : 'scale(0)';
+                        transform = isIn ? `scale(1) ${rotation}` : `scale(0) ${rotation}`;
                         opacity = isIn ? '0' : '1';
                         break;
                     case 'zoom_out':
-                        transform = isIn ? 'scale(1)' : 'scale(2)';
+                        transform = isIn ? `scale(1) ${rotation}` : `scale(2) ${rotation}`;
                         opacity = isIn ? '0' : '1';
                         break;
                     default:
                         opacity = '';
+                        transform = rotation; // 기본적으로 회전값 적용
                         break;
                 }
                 return {
@@ -1110,20 +1115,22 @@
             // 회전 설정
             if (obj.properties.rotation !== undefined && obj.properties.rotation !== null) {
                 console.log(`Applying rotation to object ${obj.id}: ${obj.properties.rotation}deg`);
+                // CSS 변수로 회전값 설정 (애니메이션에서 사용)
+                element.style.setProperty('--rotation', `${obj.properties.rotation}deg`);
                 // transform-origin을 명시적으로 설정
                 element.style.transformOrigin = 'center center';
-                // 기존 transform이 있으면 병합, 없으면 새로 생성
-                const existingTransform = element.style.transform || '';
-                const rotationTransform = `rotate(${obj.properties.rotation}deg)`;
-                const finalTransform = existingTransform ? `${existingTransform} ${rotationTransform}` : rotationTransform;
-                element.style.transform = finalTransform;
+                // 회전 transform 적용
+                element.style.transform = `rotate(${obj.properties.rotation}deg)`;
                 // 회전이 확실히 적용되도록 강제 설정
-                element.style.setProperty('transform', finalTransform, 'important');
+                element.style.setProperty('transform', `rotate(${obj.properties.rotation}deg)`, 'important');
                 // 추가로 CSS 클래스를 통한 회전 적용
                 element.classList.add('rotated-object');
                 element.setAttribute('data-rotation', obj.properties.rotation);
-                console.log(`Final transform for object ${obj.id}:`, finalTransform);
-                console.log(`Applied transform style:`, element.style.transform);
+                console.log(`Final transform for object ${obj.id}: rotate(${obj.properties.rotation}deg)`);
+                console.log(`CSS variable --rotation set to: ${obj.properties.rotation}deg`);
+            } else {
+                // 회전값이 없으면 0도로 설정
+                element.style.setProperty('--rotation', '0deg');
             }
             
             // 애니메이션이 끝난 후 opacity를 --target-opacity로 강제 덮어쓰기
@@ -1152,8 +1159,11 @@
             }
 
             // 회전 처리
-            if (properties.rotation) {
+            if (properties.rotation !== undefined && properties.rotation !== null) {
+                element.style.setProperty('--rotation', `${properties.rotation}deg`);
                 element.style.transform = `rotate(${properties.rotation}deg)`;
+            } else {
+                element.style.setProperty('--rotation', '0deg');
             }
         }
     </script>
