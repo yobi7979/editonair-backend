@@ -11,6 +11,9 @@ from datetime import datetime, timedelta
 from functools import wraps
 from urllib.parse import unquote
 
+# 라이브 상태 관리 시스템 import
+from live_state import live_state_manager
+
 from flask import Flask, jsonify, request, render_template, send_from_directory, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO, emit, join_room, leave_room, disconnect
@@ -2424,6 +2427,210 @@ def backup_database():
     except Exception as e:
         app.logger.error(f'백업 처리 중 오류: {str(e)}')
         return jsonify({'error': f'백업 처리 중 오류 발생: {str(e)}'}), 500
+
+# --- 라이브 컨트롤 API ---
+
+@app.route('/api/live/projects/<project_name>/state', methods=['GET'])
+@auth_required('viewer')
+def get_project_live_state(project_name):
+    """프로젝트의 라이브 상태 조회"""
+    try:
+        live_state = live_state_manager.get_project_live_state(project_name)
+        scene_states = live_state_manager.get_all_live_scenes(project_name)
+        
+        return jsonify({
+            'object_states': live_state,
+            'scene_states': scene_states
+        })
+    except Exception as e:
+        app.logger.error(f'라이브 상태 조회 오류: {str(e)}')
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/live/objects/<int:object_id>/text', methods=['POST'])
+@jwt_required()
+def update_text_live(object_id):
+    """텍스트 객체 실시간 내용 변경"""
+    try:
+        data = request.get_json()
+        content = data.get('content', '')
+        project_name = data.get('project_name')
+        
+        if not project_name:
+            return jsonify({'error': '프로젝트 이름이 필요합니다.'}), 400
+        
+        # 객체 존재 확인
+        obj = Object.query.get(object_id)
+        if not obj or obj.type != 'text':
+            return jsonify({'error': '텍스트 객체를 찾을 수 없습니다.'}), 404
+        
+        # 라이브 상태 업데이트
+        live_state_manager.update_object_property(project_name, object_id, 'content', content)
+        
+        # 소켓으로 실시간 업데이트 전송
+        socketio.emit('object_live_update', {
+            'object_id': object_id,
+            'property': 'content',
+            'value': content,
+            'timestamp': datetime.now().isoformat()
+        }, room=f'project_{project_name}')
+        
+        return jsonify({
+            'message': '텍스트가 업데이트되었습니다.',
+            'object_id': object_id,
+            'content': content
+        })
+        
+    except Exception as e:
+        app.logger.error(f'텍스트 라이브 업데이트 오류: {str(e)}')
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/live/scenes/<int:scene_id>/on', methods=['POST'])
+@jwt_required()
+def scene_live_on(scene_id):
+    """씬 송출 상태로 변경"""
+    try:
+        data = request.get_json()
+        project_name = data.get('project_name')
+        
+        if not project_name:
+            return jsonify({'error': '프로젝트 이름이 필요합니다.'}), 400
+        
+        # 씬 존재 확인
+        scene = Scene.query.get(scene_id)
+        if not scene:
+            return jsonify({'error': '씬을 찾을 수 없습니다.'}), 404
+        
+        # 다른 씬들 모두 아웃으로 변경
+        all_scenes = Scene.query.filter_by(project_id=scene.project_id).all()
+        for s in all_scenes:
+            live_state_manager.set_scene_live(project_name, s.id, False)
+        
+        # 해당 씬만 라이브로 설정
+        live_state_manager.set_scene_live(project_name, scene_id, True)
+        
+        # 소켓으로 실시간 업데이트 전송
+        socketio.emit('scene_live_update', {
+            'scene_id': scene_id,
+            'is_live': True,
+            'timestamp': datetime.now().isoformat()
+        }, room=f'project_{project_name}')
+        
+        return jsonify({
+            'message': f'씬 "{scene.name}"이 송출되었습니다.',
+            'scene_id': scene_id,
+            'is_live': True
+        })
+        
+    except Exception as e:
+        app.logger.error(f'씬 송출 오류: {str(e)}')
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/live/scenes/<int:scene_id>/off', methods=['POST'])
+@jwt_required()
+def scene_live_off(scene_id):
+    """씬 아웃 상태로 변경"""
+    try:
+        data = request.get_json()
+        project_name = data.get('project_name')
+        
+        if not project_name:
+            return jsonify({'error': '프로젝트 이름이 필요합니다.'}), 400
+        
+        # 씬 존재 확인
+        scene = Scene.query.get(scene_id)
+        if not scene:
+            return jsonify({'error': '씬을 찾을 수 없습니다.'}), 404
+        
+        # 씬 아웃으로 설정
+        live_state_manager.set_scene_live(project_name, scene_id, False)
+        
+        # 소켓으로 실시간 업데이트 전송
+        socketio.emit('scene_live_update', {
+            'scene_id': scene_id,
+            'is_live': False,
+            'timestamp': datetime.now().isoformat()
+        }, room=f'project_{project_name}')
+        
+        return jsonify({
+            'message': f'씬 "{scene.name}"이 아웃되었습니다.',
+            'scene_id': scene_id,
+            'is_live': False
+        })
+        
+    except Exception as e:
+        app.logger.error(f'씬 아웃 오류: {str(e)}')
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/live/objects/<int:object_id>/timer/<action>', methods=['POST'])
+@jwt_required()
+def control_timer(object_id, action):
+    """타이머 제어 (start/stop/reset)"""
+    try:
+        data = request.get_json()
+        project_name = data.get('project_name')
+        
+        if not project_name:
+            return jsonify({'error': '프로젝트 이름이 필요합니다.'}), 400
+        
+        # 객체 존재 확인
+        obj = Object.query.get(object_id)
+        if not obj or obj.type != 'timer':
+            return jsonify({'error': '타이머 객체를 찾을 수 없습니다.'}), 404
+        
+        # 타이머 제어
+        if action == 'start':
+            live_state_manager.start_timer(object_id)
+        elif action == 'stop':
+            live_state_manager.stop_timer(object_id)
+        elif action == 'reset':
+            live_state_manager.reset_timer(object_id)
+        else:
+            return jsonify({'error': '유효하지 않은 액션입니다.'}), 400
+        
+        # 현재 타이머 상태 조회
+        timer_state = live_state_manager.get_timer_state(object_id)
+        
+        # 라이브 상태에도 업데이트
+        live_state_manager.update_object_property(project_name, object_id, 'content', timer_state['current_time'])
+        
+        # 소켓으로 실시간 업데이트 전송
+        socketio.emit('timer_update', {
+            'object_id': object_id,
+            'action': action,
+            'timer_state': timer_state,
+            'timestamp': datetime.now().isoformat()
+        }, room=f'project_{project_name}')
+        
+        return jsonify({
+            'message': f'타이머 {action} 완료',
+            'object_id': object_id,
+            'timer_state': timer_state
+        })
+        
+    except Exception as e:
+        app.logger.error(f'타이머 제어 오류: {str(e)}')
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/live/projects/<project_name>/clear', methods=['POST'])
+@auth_required('editor')
+def clear_project_live_state(project_name):
+    """프로젝트 라이브 상태 모두 초기화"""
+    try:
+        live_state_manager.clear_project_live_state(project_name)
+        
+        # 소켓으로 초기화 알림
+        socketio.emit('live_state_cleared', {
+            'project_name': project_name,
+            'timestamp': datetime.now().isoformat()
+        }, room=f'project_{project_name}')
+        
+        return jsonify({
+            'message': f'프로젝트 "{project_name}"의 라이브 상태가 초기화되었습니다.'
+        })
+        
+    except Exception as e:
+        app.logger.error(f'라이브 상태 초기화 오류: {str(e)}')
+        return jsonify({'error': str(e)}), 500
 
 # --- Main Entry Point ---
 
