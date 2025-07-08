@@ -2076,6 +2076,78 @@ def get_system_stats():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/admin/restore', methods=['POST'])
+@admin_required
+def restore_database():
+    """데이터베이스 복구 (관리자 전용)"""
+    try:
+        # 업로드된 파일 확인
+        if 'backup_file' not in request.files:
+            return jsonify({'error': '백업 파일이 선택되지 않았습니다.'}), 400
+        
+        file = request.files['backup_file']
+        if file.filename == '':
+            return jsonify({'error': '파일이 선택되지 않았습니다.'}), 400
+        
+        if not file.filename.endswith('.sql'):
+            return jsonify({'error': 'SQL 파일만 업로드 가능합니다.'}), 400
+        
+        # 파일 내용 읽기
+        backup_content = file.read().decode('utf-8')
+        
+        try:
+            # 기존 데이터 삭제 (순서 중요: 외래키 제약조건 고려)
+            db.session.execute(text("DELETE FROM objects;"))
+            db.session.execute(text("DELETE FROM scene;"))
+            db.session.execute(text("DELETE FROM project_permission;"))
+            db.session.execute(text("DELETE FROM project;"))
+            db.session.execute(text("DELETE FROM user WHERE username != 'admin';"))  # admin 계정 보호
+            
+            # SQL 문을 줄별로 분리하여 실행
+            sql_lines = backup_content.split('\n')
+            current_sql = ""
+            
+            for line in sql_lines:
+                line = line.strip()
+                
+                # 주석이나 빈 줄 무시
+                if not line or line.startswith('--'):
+                    continue
+                
+                current_sql += line + " "
+                
+                # SQL 문이 완료되면 실행
+                if line.endswith(';'):
+                    try:
+                        # admin 사용자를 덮어쓰지 않도록 보호
+                        if "INSERT INTO user" in current_sql and "username = 'admin'" in current_sql:
+                            current_sql = ""
+                            continue
+                            
+                        db.session.execute(text(current_sql))
+                        current_sql = ""
+                    except Exception as e:
+                        app.logger.warning(f"SQL 실행 중 경고: {str(e)} - SQL: {current_sql[:100]}")
+                        current_sql = ""
+                        continue
+            
+            # 변경사항 커밋
+            db.session.commit()
+            
+            return jsonify({
+                'message': '데이터베이스 복구가 완료되었습니다.',
+                'timestamp': datetime.utcnow().isoformat()
+            })
+            
+        except Exception as e:
+            db.session.rollback()
+            app.logger.error(f'복구 실행 중 오류: {str(e)}')
+            return jsonify({'error': f'복구 중 오류 발생: {str(e)}'}), 500
+            
+    except Exception as e:
+        app.logger.error(f'복구 처리 중 오류: {str(e)}')
+        return jsonify({'error': f'복구 처리 중 오류 발생: {str(e)}'}), 500
+
 @app.route('/api/admin/backup', methods=['POST'])
 @admin_required
 def backup_database():
