@@ -2081,66 +2081,54 @@ def get_system_stats():
 def backup_database():
     """데이터베이스 백업 (관리자 전용)"""
     try:
-        database_url = os.environ.get('DATABASE_URL')
-        if not database_url:
-            return jsonify({'error': 'DATABASE_URL 환경 변수가 설정되지 않았습니다.'}), 500
-        
-        # PostgreSQL URL에서 연결 정보 추출
-        import urllib.parse
-        parsed = urllib.parse.urlparse(database_url)
-        
-        # 임시 백업 파일 생성
+        # SQLAlchemy ORM을 사용한 안전한 백업
         timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
         backup_filename = f'backup_{timestamp}.sql'
-        temp_backup_path = os.path.join('/tmp', backup_filename)
         
-        # SQLAlchemy를 사용한 백업 (더 안전하고 호환성 좋음)
+        backup_content = []
+        backup_content.append("-- EditOnair Database Backup")
+        backup_content.append(f"-- Generated: {datetime.utcnow().isoformat()}")
+        backup_content.append("-- ")
+        backup_content.append("")
+        
         try:
-            # 모든 테이블 데이터를 SQL 형태로 백업
-            backup_content = []
-            backup_content.append("-- EditOnair Database Backup")
-            backup_content.append(f"-- Generated: {datetime.utcnow().isoformat()}")
-            backup_content.append("-- \n")
-            
-            # 테이블 구조 및 데이터 백업
-            from sqlalchemy import text
-            
             # 사용자 테이블 백업
-            users = db.session.execute(text("SELECT * FROM user")).fetchall()
+            users = User.query.all()
             if users:
                 backup_content.append("-- User Table")
-                backup_content.append("INSERT INTO user (id, username, password, created_at, is_active) VALUES")
-                user_values = []
+                backup_content.append("DELETE FROM user WHERE id IN (SELECT id FROM user);")
                 for user in users:
-                    user_values.append(f"({user.id}, '{user.username}', '{user.password}', '{user.created_at}', {user.is_active})")
-                backup_content.append(",\n".join(user_values) + ";\n")
+                    created_at = user.created_at.isoformat() if user.created_at else 'NULL'
+                    backup_content.append(f"INSERT INTO user (id, username, password, created_at, is_active) VALUES ({user.id}, '{user.username}', '{user.password}', '{created_at}', {user.is_active});")
+                backup_content.append("")
             
             # 프로젝트 테이블 백업
-            projects = db.session.execute(text("SELECT * FROM project")).fetchall()
+            projects = Project.query.all()
             if projects:
                 backup_content.append("-- Project Table")
-                backup_content.append("INSERT INTO project (id, name, created_at, updated_at, user_id) VALUES")
-                project_values = []
+                backup_content.append("DELETE FROM project WHERE id IN (SELECT id FROM project);")
                 for project in projects:
-                    project_values.append(f"({project.id}, '{project.name}', '{project.created_at}', '{project.updated_at}', {project.user_id})")
-                backup_content.append(",\n".join(project_values) + ";\n")
+                    created_at = project.created_at.isoformat() if project.created_at else 'NULL'
+                    updated_at = project.updated_at.isoformat() if project.updated_at else 'NULL'
+                    backup_content.append(f"INSERT INTO project (id, name, created_at, updated_at, user_id) VALUES ({project.id}, '{project.name}', '{created_at}', '{updated_at}', {project.user_id});")
+                backup_content.append("")
             
             # 씬 테이블 백업
-            scenes = db.session.execute(text("SELECT * FROM scene")).fetchall()
+            scenes = Scene.query.all()
             if scenes:
                 backup_content.append("-- Scene Table")
-                backup_content.append("INSERT INTO scene (id, project_id, name, \"order\", duration, created_at, updated_at) VALUES")
-                scene_values = []
+                backup_content.append("DELETE FROM scene WHERE id IN (SELECT id FROM scene);")
                 for scene in scenes:
-                    scene_values.append(f"({scene.id}, {scene.project_id}, '{scene.name}', {scene.order}, {scene.duration}, '{scene.created_at}', '{scene.updated_at}')")
-                backup_content.append(",\n".join(scene_values) + ";\n")
+                    created_at = scene.created_at.isoformat() if scene.created_at else 'NULL'
+                    updated_at = scene.updated_at.isoformat() if scene.updated_at else 'NULL'
+                    backup_content.append(f"INSERT INTO scene (id, project_id, name, \"order\", duration, created_at, updated_at) VALUES ({scene.id}, {scene.project_id}, '{scene.name}', {scene.order}, {scene.duration}, '{created_at}', '{updated_at}');")
+                backup_content.append("")
             
             # 객체 테이블 백업
-            objects = db.session.execute(text("SELECT * FROM objects")).fetchall()
+            objects = Object.query.all()
             if objects:
                 backup_content.append("-- Objects Table")
-                backup_content.append("INSERT INTO objects (id, name, type, \"order\", properties, in_motion, out_motion, timing, scene_id, created_at, updated_at) VALUES")
-                object_values = []
+                backup_content.append("DELETE FROM objects WHERE id IN (SELECT id FROM objects);")
                 for obj in objects:
                     # JSON 문자열을 이스케이프
                     properties = obj.properties.replace("'", "''") if obj.properties else ''
@@ -2148,13 +2136,27 @@ def backup_database():
                     out_motion = obj.out_motion.replace("'", "''") if obj.out_motion else ''
                     timing = obj.timing.replace("'", "''") if obj.timing else ''
                     
-                    object_values.append(f"({obj.id}, '{obj.name}', '{obj.type}', {obj.order}, '{properties}', '{in_motion}', '{out_motion}', '{timing}', {obj.scene_id}, '{obj.created_at}', '{obj.updated_at}')")
-                backup_content.append(",\n".join(object_values) + ";\n")
+                    created_at = obj.created_at.isoformat() if obj.created_at else 'NULL'
+                    updated_at = obj.updated_at.isoformat() if obj.updated_at else 'NULL'
+                    
+                    backup_content.append(f"INSERT INTO objects (id, name, type, \"order\", properties, in_motion, out_motion, timing, scene_id, created_at, updated_at) VALUES ({obj.id}, '{obj.name}', '{obj.type}', {obj.order}, '{properties}', '{in_motion}', '{out_motion}', '{timing}', {obj.scene_id}, '{created_at}', '{updated_at}');")
+                backup_content.append("")
             
-            # 백업 내용을 파일로 저장
+            # 프로젝트 권한 테이블 백업
+            permissions = ProjectPermission.query.all()
+            if permissions:
+                backup_content.append("-- Project Permission Table")
+                backup_content.append("DELETE FROM project_permission WHERE id IN (SELECT id FROM project_permission);")
+                for perm in permissions:
+                    created_at = perm.created_at.isoformat() if perm.created_at else 'NULL'
+                    updated_at = perm.updated_at.isoformat() if perm.updated_at else 'NULL'
+                    backup_content.append(f"INSERT INTO project_permission (id, project_id, user_id, permission_type, created_at, updated_at) VALUES ({perm.id}, {perm.project_id}, {perm.user_id}, '{perm.permission_type}', '{created_at}', '{updated_at}');")
+                backup_content.append("")
+            
+            # 백업 내용을 문자열로 결합
             backup_sql = "\n".join(backup_content)
             
-            # 메모리에서 직접 반환 (임시 파일 불필요)
+            # 메모리에서 직접 반환
             from flask import make_response
             response = make_response(backup_sql)
             response.headers['Content-Type'] = 'application/sql'
@@ -2164,9 +2166,11 @@ def backup_database():
             return response
             
         except Exception as e:
+            app.logger.error(f'백업 생성 중 오류: {str(e)}')
             return jsonify({'error': f'백업 생성 중 오류 발생: {str(e)}'}), 500
             
     except Exception as e:
+        app.logger.error(f'백업 처리 중 오류: {str(e)}')
         return jsonify({'error': f'백업 처리 중 오류 발생: {str(e)}'}), 500
 
 # --- Main Entry Point ---
