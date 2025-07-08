@@ -592,31 +592,6 @@ def handle_join(data):
     room = f'project_{project_name}'
     join_room(room)
     print(f"Joined room: {room}")
-        emit('joined', {'project': project_name, 'room': room})
-        return
-        
-    # 권한 체크
-    permission = ProjectPermission.query.filter_by(
-        user_id=user_id,
-        project_id=project.id
-    ).first()
-    
-    if not permission:
-        # 프로젝트 소유자에게 기본 권한 부여
-        if project.user_id == user_id:
-            permission = ProjectPermission(
-                user_id=user_id,
-                project_id=project.id,
-                permission_type='owner'
-            )
-            db.session.add(permission)
-            db.session.commit()
-        else:
-            emit('error', {'message': 'Permission denied'})
-            return
-            
-    room = f'project_{project.id}'
-    join_room(room)
     emit('joined', {'project': project_name, 'room': room})
 
 # --- Project API ---
