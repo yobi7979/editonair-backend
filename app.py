@@ -894,7 +894,7 @@ def handle_scene(scene_id):
                     )
                     db.session.add(new_object)
         
-        scene.updated_at = datetime.utcnow()
+        scene.updated_at = datetime.datetime.utcnow()
         db.session.commit()
         return jsonify(scene_to_dict(scene))
 
