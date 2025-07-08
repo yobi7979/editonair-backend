@@ -2781,6 +2781,140 @@ def clear_project_live_state(project_name):
         app.logger.error(f'라이브 상태 초기화 오류: {str(e)}')
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/live/objects/<int:object_id>/image', methods=['POST'])
+@jwt_required()
+def update_image_live(object_id):
+    """이미지 객체 실시간 이미지 변경"""
+    try:
+        data = request.get_json()
+        image_src = data.get('src', '')
+        project_name = data.get('project_name')
+        
+        print(f"🔍 이미지 업데이트 디버그: object_id={object_id}, src='{image_src}', project_name={project_name}")
+        
+        if not project_name:
+            return jsonify({'error': '프로젝트 이름이 필요합니다.'}), 400
+        
+        # 객체 존재 확인
+        obj = Object.query.get(object_id)
+        if not obj or obj.type != 'image':
+            print(f"❌ 이미지 객체를 찾을 수 없음: object_id={object_id}, obj={obj}, type={obj.type if obj else 'None'}")
+            return jsonify({'error': '이미지 객체를 찾을 수 없습니다.'}), 404
+        
+        print(f"✅ 이미지 객체 찾음: {obj.name} (scene_id={obj.scene_id})")
+        
+        # 라이브 상태 업데이트
+        live_state_manager.update_object_property(project_name, object_id, 'src', image_src)
+        print(f"✅ 라이브 상태 매니저 업데이트 완료")
+        
+        # 소켓으로 실시간 업데이트 전송
+        object_update_data = {
+            'object_id': object_id,
+            'property': 'src',
+            'value': image_src,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        # 프로젝트 룸으로 전송
+        project_room = f'project_{project_name}'
+        print(f"🚀 이미지 업데이트: {project_room} 룸으로 object_live_update 이벤트 전송")
+        print(f"🚀 전송 데이터: {object_update_data}")
+        socketio.emit('object_live_update', object_update_data, room=project_room)
+        print(f"🚀 프로젝트 룸 이벤트 전송 완료")
+        
+        # 오버레이 페이지를 위해 모든 사용자의 개별 룸으로도 전송
+        scene = obj.scene
+        project = scene.project
+        if project:
+            print(f"🔍 프로젝트 정보: {project.name} (id={project.id})")
+            permissions = ProjectPermission.query.filter_by(project_id=project.id).all()
+            print(f"🔍 프로젝트 권한 개수: {len(permissions)}")
+            
+            for permission in permissions:
+                user_room = f'user_{permission.user_id}'
+                print(f"🚀 오버레이용 이미지 업데이트: {user_room} 룸으로 object_live_update 이벤트 전송")
+                socketio.emit('object_live_update', object_update_data, room=user_room)
+                print(f"🚀 {user_room} 룸으로 이벤트 전송 완료")
+            print(f"🚀 모든 사용자 룸으로 이미지 업데이트 이벤트 전송 완료")
+        
+        return jsonify({
+            'message': '이미지가 업데이트되었습니다.',
+            'object_id': object_id,
+            'src': image_src
+        })
+        
+    except Exception as e:
+        app.logger.error(f'이미지 라이브 업데이트 오류: {str(e)}')
+        print(f"❌ 이미지 업데이트 예외: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/live/objects/<int:object_id>/shape', methods=['POST'])
+@jwt_required()
+def update_shape_live(object_id):
+    """도형 객체 실시간 속성 변경 (컬러 등)"""
+    try:
+        data = request.get_json()
+        color = data.get('color', '')
+        project_name = data.get('project_name')
+        
+        print(f"🔍 도형 업데이트 디버그: object_id={object_id}, color='{color}', project_name={project_name}")
+        
+        if not project_name:
+            return jsonify({'error': '프로젝트 이름이 필요합니다.'}), 400
+        
+        # 객체 존재 확인
+        obj = Object.query.get(object_id)
+        if not obj or obj.type != 'shape':
+            print(f"❌ 도형 객체를 찾을 수 없음: object_id={object_id}, obj={obj}, type={obj.type if obj else 'None'}")
+            return jsonify({'error': '도형 객체를 찾을 수 없습니다.'}), 404
+        
+        print(f"✅ 도형 객체 찾음: {obj.name} (scene_id={obj.scene_id})")
+        
+        # 라이브 상태 업데이트
+        live_state_manager.update_object_property(project_name, object_id, 'color', color)
+        print(f"✅ 라이브 상태 매니저 업데이트 완료")
+        
+        # 소켓으로 실시간 업데이트 전송
+        object_update_data = {
+            'object_id': object_id,
+            'property': 'color',
+            'value': color,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        # 프로젝트 룸으로 전송
+        project_room = f'project_{project_name}'
+        print(f"🚀 도형 업데이트: {project_room} 룸으로 object_live_update 이벤트 전송")
+        print(f"🚀 전송 데이터: {object_update_data}")
+        socketio.emit('object_live_update', object_update_data, room=project_room)
+        print(f"🚀 프로젝트 룸 이벤트 전송 완료")
+        
+        # 오버레이 페이지를 위해 모든 사용자의 개별 룸으로도 전송
+        scene = obj.scene
+        project = scene.project
+        if project:
+            print(f"🔍 프로젝트 정보: {project.name} (id={project.id})")
+            permissions = ProjectPermission.query.filter_by(project_id=project.id).all()
+            print(f"🔍 프로젝트 권한 개수: {len(permissions)}")
+            
+            for permission in permissions:
+                user_room = f'user_{permission.user_id}'
+                print(f"🚀 오버레이용 도형 업데이트: {user_room} 룸으로 object_live_update 이벤트 전송")
+                socketio.emit('object_live_update', object_update_data, room=user_room)
+                print(f"🚀 {user_room} 룸으로 이벤트 전송 완료")
+            print(f"🚀 모든 사용자 룸으로 도형 업데이트 이벤트 전송 완료")
+        
+        return jsonify({
+            'message': '도형이 업데이트되었습니다.',
+            'object_id': object_id,
+            'color': color
+        })
+        
+    except Exception as e:
+        app.logger.error(f'도형 라이브 업데이트 오류: {str(e)}')
+        print(f"❌ 도형 업데이트 예외: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 # --- Main Entry Point ---
 
 if __name__ == '__main__':
