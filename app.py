@@ -558,12 +558,15 @@ def handle_disconnect():
 def handle_join(data):
     print(f"🎯 JOIN 이벤트 받음: {data}")
     project_name = data.get('project')
+    overlay_user_id = data.get('user_id')  # 오버레이에서 제공하는 user_id
+    
     if not project_name:
         print("❌ 프로젝트 이름이 없음")
         emit('error', {'message': 'Project name is required'})
         return
     
     print(f"🎯 프로젝트 이름: {project_name}")
+    print(f"🎯 오버레이 user_id: {overlay_user_id}")
     
     # 토큰이 있는 경우 사용자 인증
     token = request.args.get('token')
@@ -607,7 +610,17 @@ def handle_join(data):
     join_room(room)
     print(f"✅ Socket.io: 클라이언트가 룸에 참여 - {room}")
     print(f"✅ Socket.io: 현재 연결된 세션 ID - {request.sid}")
-    emit('joined', {'project': project_name, 'room': room})
+    
+    # user_id가 있으면 user 룸에도 참여 (토큰 인증된 사용자 또는 오버레이의 user_id)
+    final_user_id = user_id or overlay_user_id
+    if final_user_id:
+        user_room = f'user_{final_user_id}'
+        join_room(user_room)
+        print(f"✅ Socket.io: 클라이언트가 사용자 룸에도 참여 - {user_room}")
+        emit('joined', {'project': project_name, 'room': room, 'user_room': user_room})
+    else:
+        emit('joined', {'project': project_name, 'room': room})
+    
     print(f"✅ Socket.io: joined 이벤트 전송 완료")
 
 # --- Project API ---
@@ -2461,16 +2474,22 @@ def update_text_live(object_id):
         content = data.get('content', '')
         project_name = data.get('project_name')
         
+        print(f"🔍 텍스트 업데이트 디버그: object_id={object_id}, content='{content}', project_name={project_name}")
+        
         if not project_name:
             return jsonify({'error': '프로젝트 이름이 필요합니다.'}), 400
         
         # 객체 존재 확인
         obj = Object.query.get(object_id)
         if not obj or obj.type != 'text':
+            print(f"❌ 텍스트 객체를 찾을 수 없음: object_id={object_id}, obj={obj}, type={obj.type if obj else 'None'}")
             return jsonify({'error': '텍스트 객체를 찾을 수 없습니다.'}), 404
+        
+        print(f"✅ 텍스트 객체 찾음: {obj.name} (scene_id={obj.scene_id})")
         
         # 라이브 상태 업데이트
         live_state_manager.update_object_property(project_name, object_id, 'content', content)
+        print(f"✅ 라이브 상태 매니저 업데이트 완료")
         
         # 소켓으로 실시간 업데이트 전송
         object_update_data = {
@@ -2481,16 +2500,29 @@ def update_text_live(object_id):
         }
         
         # 프로젝트 룸으로 전송
-        socketio.emit('object_live_update', object_update_data, room=f'project_{project_name}')
+        project_room = f'project_{project_name}'
+        print(f"🚀 텍스트 업데이트: {project_room} 룸으로 object_live_update 이벤트 전송")
+        print(f"🚀 전송 데이터: {object_update_data}")
+        socketio.emit('object_live_update', object_update_data, room=project_room)
+        print(f"🚀 프로젝트 룸 이벤트 전송 완료")
         
         # 오버레이 페이지를 위해 모든 사용자의 개별 룸으로도 전송
         scene = obj.scene
         project = scene.project
         if project:
+            print(f"🔍 프로젝트 정보: {project.name} (id={project.id})")
             permissions = ProjectPermission.query.filter_by(project_id=project.id).all()
+            print(f"🔍 프로젝트 권한 개수: {len(permissions)}")
+            
             for permission in permissions:
                 user_room = f'user_{permission.user_id}'
+                print(f"🚀 오버레이용 텍스트 업데이트: {user_room} 룸으로 object_live_update 이벤트 전송")
+                print(f"🚀 권한 정보: user_id={permission.user_id}, permission_type={permission.permission_type}")
                 socketio.emit('object_live_update', object_update_data, room=user_room)
+                print(f"🚀 {user_room} 룸으로 이벤트 전송 완료")
+            print(f"🚀 모든 사용자 룸으로 텍스트 업데이트 이벤트 전송 완료")
+        else:
+            print(f"❌ 프로젝트를 찾을 수 없음: scene_id={obj.scene_id}")
         
         return jsonify({
             'message': '텍스트가 업데이트되었습니다.',
@@ -2500,6 +2532,7 @@ def update_text_live(object_id):
         
     except Exception as e:
         app.logger.error(f'텍스트 라이브 업데이트 오류: {str(e)}')
+        print(f"❌ 텍스트 업데이트 예외: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/live/scenes/<int:scene_id>/on', methods=['POST'])
@@ -2517,6 +2550,9 @@ def scene_live_on(scene_id):
         scene = Scene.query.get(scene_id)
         if not scene:
             return jsonify({'error': '씬을 찾을 수 없습니다.'}), 404
+        
+        print(f"🔍 씬 송출 디버그: scene_id={scene_id}, project_name={project_name}")
+        print(f"🔍 씬 정보: {scene.name}, project_id={scene.project_id}")
         
         # 다른 씬들 모두 아웃으로 변경
         all_scenes = Scene.query.filter_by(project_id=scene.project_id).all()
@@ -2542,13 +2578,20 @@ def scene_live_on(scene_id):
         # 오버레이 페이지를 위해 모든 사용자의 개별 룸으로도 전송
         project = Project.query.get(scene.project_id)
         if project:
+            print(f"🔍 프로젝트 검색 성공: {project.name}")
             # 해당 프로젝트에 권한이 있는 모든 사용자들의 룸으로도 이벤트 전송
             permissions = ProjectPermission.query.filter_by(project_id=project.id).all()
+            print(f"🔍 프로젝트 권한 개수: {len(permissions)}")
+            
             for permission in permissions:
                 user_room = f'user_{permission.user_id}'
                 print(f"🚀 오버레이용 송출: {user_room} 룸으로 scene_live_update 이벤트 전송")
+                print(f"🚀 권한 정보: user_id={permission.user_id}, permission_type={permission.permission_type}")
                 socketio.emit('scene_live_update', update_data, room=user_room)
+                print(f"🚀 {user_room} 룸으로 이벤트 전송 완료")
             print(f"🚀 모든 사용자 룸으로 이벤트 전송 완료")
+        else:
+            print(f"❌ 프로젝트를 찾을 수 없음: project_id={scene.project_id}")
         
         return jsonify({
             'message': f'씬 "{scene.name}"이 송출되었습니다.',
