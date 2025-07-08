@@ -267,24 +267,61 @@ def object_to_dict(obj):
 
 def scene_to_dict(scene):
     """씬 객체를 딕셔너리로 변환하는 헬퍼 함수"""
-    return {
-        'id': scene.id,
-        'name': scene.name,
-        'order': scene.order,
-        'duration': scene.duration,
-        'created_at': scene.created_at.isoformat() if scene.created_at else None,
-        'updated_at': scene.updated_at.isoformat() if scene.updated_at else None,
-        'objects': [{
-            'id': obj.id,
-            'name': obj.name,
-            'type': obj.type,
-            'order': obj.order,
-            'properties': json.loads(obj.properties) if obj.properties else {},
-            'in_motion': json.loads(obj.in_motion) if obj.in_motion else {},
-            'out_motion': json.loads(obj.out_motion) if obj.out_motion else {},
-            'timing': json.loads(obj.timing) if obj.timing else {}
-        } for obj in sorted(scene.objects, key=lambda x: x.order)]
-    }
+    try:
+        objects = []
+        for obj in sorted(scene.objects, key=lambda x: x.order):
+            try:
+                # 안전한 JSON 로딩
+                properties = json.loads(obj.properties) if obj.properties else {}
+                in_motion = json.loads(obj.in_motion) if obj.in_motion else {}
+                out_motion = json.loads(obj.out_motion) if obj.out_motion else {}
+                timing = json.loads(obj.timing) if obj.timing else {}
+                
+                objects.append({
+                    'id': obj.id,
+                    'name': obj.name,
+                    'type': obj.type,
+                    'order': obj.order,
+                    'properties': properties,
+                    'in_motion': in_motion,
+                    'out_motion': out_motion,
+                    'timing': timing
+                })
+            except (json.JSONDecodeError, TypeError) as e:
+                print(f"Error parsing JSON for object {obj.id}: {str(e)}")
+                # 기본값으로 빈 딕셔너리 사용
+                objects.append({
+                    'id': obj.id,
+                    'name': obj.name,
+                    'type': obj.type,
+                    'order': obj.order,
+                    'properties': {},
+                    'in_motion': {},
+                    'out_motion': {},
+                    'timing': {}
+                })
+        
+        return {
+            'id': scene.id,
+            'name': scene.name,
+            'order': scene.order,
+            'duration': scene.duration,
+            'created_at': scene.created_at.isoformat() if scene.created_at else None,
+            'updated_at': scene.updated_at.isoformat() if scene.updated_at else None,
+            'objects': objects
+        }
+    except Exception as e:
+        print(f"Error in scene_to_dict: {str(e)}")
+        # 최소한의 데이터만 반환
+        return {
+            'id': scene.id,
+            'name': scene.name,
+            'order': scene.order,
+            'duration': scene.duration,
+            'created_at': scene.created_at.isoformat() if scene.created_at else None,
+            'updated_at': scene.updated_at.isoformat() if scene.updated_at else None,
+            'objects': []
+        }
 
 def project_to_dict(project):
     """프로젝트 객체를 딕셔너리로 변환하는 헬퍼 함수"""
@@ -832,71 +869,88 @@ def create_scene(project_name):
 @app.route('/api/scenes/<int:scene_id>', methods=['GET', 'PUT'])
 @jwt_required()
 def handle_scene(scene_id):
-    current_user = get_current_user_from_token()
-    if not current_user:
-        return jsonify({'error': 'Authentication required'}), 401
-    
-    scene = Scene.query.get_or_404(scene_id)
-    
-    # 씬의 프로젝트에 대한 권한 확인
-    if not check_project_permission(current_user.id, scene.project_id, 'viewer'):
-        return jsonify({'error': 'Permission denied'}), 403
-    
-    if request.method == 'GET':
-        return jsonify(scene_to_dict(scene))
-    
-    elif request.method == 'PUT':
-        # 편집 권한 확인
-        if not check_project_permission(current_user.id, scene.project_id, 'editor'):
+    try:
+        current_user = get_current_user_from_token()
+        if not current_user:
+            return jsonify({'error': 'Authentication required'}), 401
+        
+        scene = Scene.query.get_or_404(scene_id)
+        
+        # 씬의 프로젝트에 대한 권한 확인
+        if not check_project_permission(current_user.id, scene.project_id, 'viewer'):
             return jsonify({'error': 'Permission denied'}), 403
-            
-        data = request.get_json()
-        if not data or 'name' not in data:
-            return jsonify({'error': 'Scene name is required'}), 400
+        
+        if request.method == 'GET':
+            return jsonify(scene_to_dict(scene))
+        
+        elif request.method == 'PUT':
+            # 편집 권한 확인
+            if not check_project_permission(current_user.id, scene.project_id, 'editor'):
+                return jsonify({'error': 'Permission denied'}), 403
+                
+            data = request.get_json()
+            if not data or 'name' not in data:
+                return jsonify({'error': 'Scene name is required'}), 400
 
-        scene.name = data['name']
-        
-        # Update objects if provided
-        if 'objects' in data:
-            # Get existing object IDs
-            existing_object_ids = {obj.id for obj in scene.objects}
-            incoming_object_ids = {obj_data['id'] for obj_data in data['objects'] if 'id' in obj_data}
+            # 씬 이름 업데이트
+            print(f"Updating scene {scene_id} name from '{scene.name}' to '{data['name']}'")
+            scene.name = data['name']
             
-            # Delete objects that are no longer in the scene
-            for obj in list(scene.objects):
-                if obj.id not in incoming_object_ids:
-                    db.session.delete(obj)
+            # Update objects if provided
+            if 'objects' in data:
+                print(f"Updating objects for scene {scene_id}")
+                # Get existing object IDs
+                existing_object_ids = {obj.id for obj in scene.objects}
+                incoming_object_ids = {obj_data['id'] for obj_data in data['objects'] if 'id' in obj_data}
+                
+                # Delete objects that are no longer in the scene
+                for obj in list(scene.objects):
+                    if obj.id not in incoming_object_ids:
+                        db.session.delete(obj)
+                
+                # Update or create objects
+                for obj_data in data['objects']:
+                    obj_id = obj_data.get('id')
+                    if obj_id and obj_id in existing_object_ids:
+                        # Update existing object
+                        obj = next(o for o in scene.objects if o.id == obj_id)
+                        obj.name = obj_data.get('name', obj.name)
+                        obj.type = obj_data.get('type', obj.type)
+                        obj.order = obj_data.get('order', obj.order)
+                        obj.properties = json.dumps(obj_data.get('properties', {}))
+                        obj.in_motion = json.dumps(obj_data.get('in_motion', {}))
+                        obj.out_motion = json.dumps(obj_data.get('out_motion', {}))
+                        obj.timing = json.dumps(obj_data.get('timing', {}))
+                    else:
+                        # Create new object
+                        new_object = Object(
+                            name=obj_data.get('name', 'New Object'),
+                            type=obj_data.get('type', 'text'),
+                            order=obj_data.get('order', 0),
+                            properties=json.dumps(obj_data.get('properties', {})),
+                            in_motion=json.dumps(obj_data.get('in_motion', {})),
+                            out_motion=json.dumps(obj_data.get('out_motion', {})),
+                            timing=json.dumps(obj_data.get('timing', {})),
+                            scene_id=scene.id
+                        )
+                        db.session.add(new_object)
             
-            # Update or create objects
-            for obj_data in data['objects']:
-                obj_id = obj_data.get('id')
-                if obj_id and obj_id in existing_object_ids:
-                    # Update existing object
-                    obj = next(o for o in scene.objects if o.id == obj_id)
-                    obj.name = obj_data.get('name', obj.name)
-                    obj.type = obj_data.get('type', obj.type)
-                    obj.order = obj_data.get('order', obj.order)
-                    obj.properties = json.dumps(obj_data.get('properties', {}))
-                    obj.in_motion = json.dumps(obj_data.get('in_motion', {}))
-                    obj.out_motion = json.dumps(obj_data.get('out_motion', {}))
-                    obj.timing = json.dumps(obj_data.get('timing', {}))
-                else:
-                    # Create new object
-                    new_object = Object(
-                        name=obj_data.get('name', 'New Object'),
-                        type=obj_data.get('type', 'text'),
-                        order=obj_data.get('order', 0),
-                        properties=json.dumps(obj_data.get('properties', {})),
-                        in_motion=json.dumps(obj_data.get('in_motion', {})),
-                        out_motion=json.dumps(obj_data.get('out_motion', {})),
-                        timing=json.dumps(obj_data.get('timing', {})),
-                        scene_id=scene.id
-                    )
-                    db.session.add(new_object)
-        
-        scene.updated_at = datetime.datetime.utcnow()
-        db.session.commit()
-        return jsonify(scene_to_dict(scene))
+            # 업데이트 시간 설정
+            scene.updated_at = datetime.utcnow()
+            
+            # 데이터베이스 커밋
+            db.session.commit()
+            print(f"Scene {scene_id} updated successfully")
+            
+            # 응답 반환
+            return jsonify(scene_to_dict(scene))
+            
+    except Exception as e:
+        print(f"Error in handle_scene: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        db.session.rollback()
+        return jsonify({'error': f'Internal server error: {str(e)}'}), 500
 
 @app.route('/api/scenes/<int:scene_id>', methods=['DELETE'])
 @jwt_required()
