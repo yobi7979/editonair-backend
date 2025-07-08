@@ -555,28 +555,43 @@ def handle_disconnect():
         del session['user_id']
 
 @socketio.on('join')
-@authenticated_only
 def handle_join(data):
     project_name = data.get('project')
     if not project_name:
         emit('error', {'message': 'Project name is required'})
         return
-        
-    # WebSocket에서는 session에 user_id가 설정되어 있음 (authenticated_only 데코레이터에서)
-    user_id = session.get('user_id')
-    if not user_id:
-        emit('error', {'message': 'Authentication required'})
-        return
-        
-    project = get_project_by_name(project_name, user_id)
-    if not project:
-        emit('error', {'message': 'Project not found'})
-        return
-        
-    # 프로젝트 소유자는 자동으로 권한 부여
-    if project.user_id == user_id:
-        room = f'project_{project.id}'
-        join_room(room)
+    
+    # 토큰이 있는 경우 사용자 인증
+    token = request.args.get('token')
+    user_id = None
+    
+    if token:
+        try:
+            decoded_token = decode_token(token)
+            user_id = decoded_token['sub']
+            session['user_id'] = user_id
+        except Exception as e:
+            app.logger.error(f"Token validation failed: {str(e)}")
+            emit('error', {'message': 'Invalid token'})
+            return
+    
+    # 프로젝트 검색 (user_id가 있으면 권한 확인, 없으면 공개적으로 접근)
+    if user_id:
+        project = get_project_by_name(project_name, user_id)
+        if not project:
+            emit('error', {'message': 'Project not found'})
+            return
+    else:
+        # 토큰 없이 접근하는 경우 (오버레이 페이지 등)
+        project = Project.query.filter_by(name=project_name).first()
+        if not project:
+            emit('error', {'message': 'Project not found'})
+            return
+    
+    # 프로젝트 룸에 참여
+    room = f'project_{project_name}'
+    join_room(room)
+    print(f"Joined room: {room}")
         emit('joined', {'project': project_name, 'room': room})
         return
         
