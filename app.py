@@ -2081,25 +2081,93 @@ def get_system_stats():
 def backup_database():
     """데이터베이스 백업 (관리자 전용)"""
     try:
-        # PostgreSQL 백업
         database_url = os.environ.get('DATABASE_URL')
-        if database_url:
-            import subprocess
+        if not database_url:
+            return jsonify({'error': 'DATABASE_URL 환경 변수가 설정되지 않았습니다.'}), 500
+        
+        # PostgreSQL URL에서 연결 정보 추출
+        import urllib.parse
+        parsed = urllib.parse.urlparse(database_url)
+        
+        # 임시 백업 파일 생성
+        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        backup_filename = f'backup_{timestamp}.sql'
+        temp_backup_path = os.path.join('/tmp', backup_filename)
+        
+        # SQLAlchemy를 사용한 백업 (더 안전하고 호환성 좋음)
+        try:
+            # 모든 테이블 데이터를 SQL 형태로 백업
+            backup_content = []
+            backup_content.append("-- EditOnair Database Backup")
+            backup_content.append(f"-- Generated: {datetime.utcnow().isoformat()}")
+            backup_content.append("-- \n")
             
-            # pg_dump 명령어 실행
-            timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-            backup_filename = f'backup_{timestamp}.sql'
+            # 테이블 구조 및 데이터 백업
+            from sqlalchemy import text
             
-            # 실제 구현에서는 보안을 위해 더 안전한 방법 사용
-            # 여기서는 예시로만 제공
-            return jsonify({
-                'message': '백업 기능은 개발 중입니다.',
-                'filename': backup_filename
-            })
-        else:
-            return jsonify({'error': 'PostgreSQL 데이터베이스만 지원합니다.'}), 400
+            # 사용자 테이블 백업
+            users = db.session.execute(text("SELECT * FROM user")).fetchall()
+            if users:
+                backup_content.append("-- User Table")
+                backup_content.append("INSERT INTO user (id, username, password, created_at, is_active) VALUES")
+                user_values = []
+                for user in users:
+                    user_values.append(f"({user.id}, '{user.username}', '{user.password}', '{user.created_at}', {user.is_active})")
+                backup_content.append(",\n".join(user_values) + ";\n")
+            
+            # 프로젝트 테이블 백업
+            projects = db.session.execute(text("SELECT * FROM project")).fetchall()
+            if projects:
+                backup_content.append("-- Project Table")
+                backup_content.append("INSERT INTO project (id, name, created_at, updated_at, user_id) VALUES")
+                project_values = []
+                for project in projects:
+                    project_values.append(f"({project.id}, '{project.name}', '{project.created_at}', '{project.updated_at}', {project.user_id})")
+                backup_content.append(",\n".join(project_values) + ";\n")
+            
+            # 씬 테이블 백업
+            scenes = db.session.execute(text("SELECT * FROM scene")).fetchall()
+            if scenes:
+                backup_content.append("-- Scene Table")
+                backup_content.append("INSERT INTO scene (id, project_id, name, \"order\", duration, created_at, updated_at) VALUES")
+                scene_values = []
+                for scene in scenes:
+                    scene_values.append(f"({scene.id}, {scene.project_id}, '{scene.name}', {scene.order}, {scene.duration}, '{scene.created_at}', '{scene.updated_at}')")
+                backup_content.append(",\n".join(scene_values) + ";\n")
+            
+            # 객체 테이블 백업
+            objects = db.session.execute(text("SELECT * FROM objects")).fetchall()
+            if objects:
+                backup_content.append("-- Objects Table")
+                backup_content.append("INSERT INTO objects (id, name, type, \"order\", properties, in_motion, out_motion, timing, scene_id, created_at, updated_at) VALUES")
+                object_values = []
+                for obj in objects:
+                    # JSON 문자열을 이스케이프
+                    properties = obj.properties.replace("'", "''") if obj.properties else ''
+                    in_motion = obj.in_motion.replace("'", "''") if obj.in_motion else ''
+                    out_motion = obj.out_motion.replace("'", "''") if obj.out_motion else ''
+                    timing = obj.timing.replace("'", "''") if obj.timing else ''
+                    
+                    object_values.append(f"({obj.id}, '{obj.name}', '{obj.type}', {obj.order}, '{properties}', '{in_motion}', '{out_motion}', '{timing}', {obj.scene_id}, '{obj.created_at}', '{obj.updated_at}')")
+                backup_content.append(",\n".join(object_values) + ";\n")
+            
+            # 백업 내용을 파일로 저장
+            backup_sql = "\n".join(backup_content)
+            
+            # 메모리에서 직접 반환 (임시 파일 불필요)
+            from flask import make_response
+            response = make_response(backup_sql)
+            response.headers['Content-Type'] = 'application/sql'
+            response.headers['Content-Disposition'] = f'attachment; filename="{backup_filename}"'
+            response.headers['Content-Length'] = len(backup_sql.encode('utf-8'))
+            
+            return response
+            
+        except Exception as e:
+            return jsonify({'error': f'백업 생성 중 오류 발생: {str(e)}'}), 500
+            
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': f'백업 처리 중 오류 발생: {str(e)}'}), 500
 
 # --- Main Entry Point ---
 
