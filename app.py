@@ -401,6 +401,24 @@ def authenticated_only(f):
             
     return wrapped
 
+def admin_required(f):
+    """관리자 권한이 필요한 API를 위한 데코레이터"""
+    @wraps(f)
+    @jwt_required()
+    def decorated_function(*args, **kwargs):
+        try:
+            user_id = get_jwt_identity()
+            user = User.query.get(user_id)
+            
+            if not user or user.username != 'admin':
+                return jsonify({'error': '관리자 권한이 필요합니다.'}), 403
+            
+            return f(*args, **kwargs)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
+    return decorated_function
+
 # CORS 미들웨어 제거 (Flask-CORS가 처리)
 
 @app.route('/health')
@@ -1892,6 +1910,194 @@ def preload_project(project_name):
         
         return jsonify(preload_data)
         
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# --- Admin API Routes ---
+
+@app.route('/api/admin/users', methods=['GET'])
+@admin_required
+def get_all_users():
+    """모든 사용자 조회 (관리자 전용)"""
+    try:
+        users = User.query.all()
+        return jsonify([user.to_dict() for user in users])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/users', methods=['POST'])
+@admin_required
+def create_user():
+    """새 사용자 생성 (관리자 전용)"""
+    try:
+        data = request.get_json()
+        username = data.get('username')
+        password = data.get('password')
+        
+        if not username or not password:
+            return jsonify({'error': '사용자명과 비밀번호가 필요합니다.'}), 400
+        
+        # 중복 사용자명 체크
+        if User.query.filter_by(username=username).first():
+            return jsonify({'error': '이미 존재하는 사용자명입니다.'}), 400
+        
+        # 비밀번호 해싱
+        hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        
+        new_user = User(
+            username=username,
+            password=hashed_password,
+            is_active=data.get('is_active', True)
+        )
+        
+        db.session.add(new_user)
+        db.session.commit()
+        
+        return jsonify(new_user.to_dict()), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/users/<int:user_id>', methods=['PUT'])
+@admin_required
+def update_user(user_id):
+    """사용자 정보 수정 (관리자 전용)"""
+    try:
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'error': '사용자를 찾을 수 없습니다.'}), 404
+        
+        data = request.get_json()
+        
+        if 'username' in data:
+            # 중복 사용자명 체크 (현재 사용자 제외)
+            existing_user = User.query.filter_by(username=data['username']).first()
+            if existing_user and existing_user.id != user_id:
+                return jsonify({'error': '이미 존재하는 사용자명입니다.'}), 400
+            user.username = data['username']
+        
+        if 'password' in data:
+            user.password = bcrypt.hashpw(data['password'].encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        
+        if 'is_active' in data:
+            user.is_active = data['is_active']
+        
+        db.session.commit()
+        return jsonify(user.to_dict())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/users/<int:user_id>', methods=['DELETE'])
+@admin_required
+def delete_user(user_id):
+    """사용자 삭제 (관리자 전용)"""
+    try:
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'error': '사용자를 찾을 수 없습니다.'}), 404
+        
+        # admin 계정은 삭제할 수 없음
+        if user.username == 'admin':
+            return jsonify({'error': '관리자 계정은 삭제할 수 없습니다.'}), 400
+        
+        db.session.delete(user)
+        db.session.commit()
+        return jsonify({'message': '사용자가 삭제되었습니다.'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/projects', methods=['GET'])
+@admin_required
+def get_all_projects():
+    """모든 프로젝트 조회 (관리자 전용)"""
+    try:
+        projects = Project.query.all()
+        project_list = []
+        
+        for project in projects:
+            scene_count = Scene.query.filter_by(project_id=project.id).count()
+            project_dict = project_to_dict(project)
+            project_dict['scene_count'] = scene_count
+            project_list.append(project_dict)
+        
+        return jsonify(project_list)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/projects/<int:project_id>', methods=['DELETE'])
+@admin_required
+def delete_project_admin(project_id):
+    """프로젝트 삭제 (관리자 전용)"""
+    try:
+        project = Project.query.get(project_id)
+        if not project:
+            return jsonify({'error': '프로젝트를 찾을 수 없습니다.'}), 404
+        
+        # 프로젝트 폴더 삭제
+        project_folder = get_project_folder(project.name, project.user_id)
+        if os.path.exists(project_folder):
+            shutil.rmtree(project_folder)
+        
+        db.session.delete(project)
+        db.session.commit()
+        return jsonify({'message': '프로젝트가 삭제되었습니다.'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/stats', methods=['GET'])
+@admin_required
+def get_system_stats():
+    """시스템 통계 조회 (관리자 전용)"""
+    try:
+        total_users = User.query.count()
+        total_projects = Project.query.count()
+        active_users = User.query.filter_by(is_active=True).count()
+        
+        # 최근 활동 (예시)
+        recent_activities = [
+            {
+                'action': f'사용자 {user.username} 가입',
+                'timestamp': user.created_at.strftime('%Y-%m-%d %H:%M:%S')
+            }
+            for user in User.query.order_by(User.created_at.desc()).limit(10)
+        ]
+        
+        # 저장 공간 사용량 계산 (예시)
+        storage_used = "계산 중..."
+        
+        return jsonify({
+            'total_users': total_users,
+            'total_projects': total_projects,
+            'active_users': active_users,
+            'storage_used': storage_used,
+            'memory_usage': '65%',  # 실제 구현 시 psutil 등 사용
+            'cpu_usage': '45%',     # 실제 구현 시 psutil 등 사용
+            'recent_activities': recent_activities
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/backup', methods=['POST'])
+@admin_required
+def backup_database():
+    """데이터베이스 백업 (관리자 전용)"""
+    try:
+        # PostgreSQL 백업
+        database_url = os.environ.get('DATABASE_URL')
+        if database_url:
+            import subprocess
+            
+            # pg_dump 명령어 실행
+            timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+            backup_filename = f'backup_{timestamp}.sql'
+            
+            # 실제 구현에서는 보안을 위해 더 안전한 방법 사용
+            # 여기서는 예시로만 제공
+            return jsonify({
+                'message': '백업 기능은 개발 중입니다.',
+                'filename': backup_filename
+            })
+        else:
+            return jsonify({'error': 'PostgreSQL 데이터베이스만 지원합니다.'}), 400
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
