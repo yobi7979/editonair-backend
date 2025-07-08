@@ -591,8 +591,10 @@ def handle_join(data):
     # 프로젝트 룸에 참여
     room = f'project_{project_name}'
     join_room(room)
-    print(f"Joined room: {room}")
+    print(f"✅ Socket.io: 클라이언트가 룸에 참여 - {room}")
+    print(f"✅ Socket.io: 현재 연결된 세션 ID - {request.sid}")
     emit('joined', {'project': project_name, 'room': room})
+    print(f"✅ Socket.io: joined 이벤트 전송 완료")
 
 # --- Project API ---
 
@@ -2499,11 +2501,17 @@ def scene_live_on(scene_id):
         live_state_manager.set_scene_live(project_name, scene_id, True)
         
         # 소켓으로 실시간 업데이트 전송
-        socketio.emit('scene_live_update', {
+        room_name = f'project_{project_name}'
+        update_data = {
             'scene_id': scene_id,
             'is_live': True,
             'timestamp': datetime.now().isoformat()
-        }, room=f'project_{project_name}')
+        }
+        print(f"🚀 씬 송출: {room_name} 룸으로 scene_live_update 이벤트 전송")
+        print(f"🚀 전송 데이터: {update_data}")
+        
+        socketio.emit('scene_live_update', update_data, room=room_name)
+        print(f"🚀 Socket.io 이벤트 전송 완료")
         
         return jsonify({
             'message': f'씬 "{scene.name}"이 송출되었습니다.',
@@ -2535,11 +2543,17 @@ def scene_live_off(scene_id):
         live_state_manager.set_scene_live(project_name, scene_id, False)
         
         # 소켓으로 실시간 업데이트 전송
-        socketio.emit('scene_live_update', {
+        room_name = f'project_{project_name}'
+        update_data = {
             'scene_id': scene_id,
             'is_live': False,
             'timestamp': datetime.now().isoformat()
-        }, room=f'project_{project_name}')
+        }
+        print(f"🛑 씬 아웃: {room_name} 룸으로 scene_live_update 이벤트 전송")
+        print(f"🛑 전송 데이터: {update_data}")
+        
+        socketio.emit('scene_live_update', update_data, room=room_name)
+        print(f"🛑 Socket.io 이벤트 전송 완료")
         
         return jsonify({
             'message': f'씬 "{scene.name}"이 아웃되었습니다.',
