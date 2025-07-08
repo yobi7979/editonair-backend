@@ -556,37 +556,51 @@ def handle_disconnect():
 
 @socketio.on('join')
 def handle_join(data):
+    print(f"🎯 JOIN 이벤트 받음: {data}")
     project_name = data.get('project')
     if not project_name:
+        print("❌ 프로젝트 이름이 없음")
         emit('error', {'message': 'Project name is required'})
         return
+    
+    print(f"🎯 프로젝트 이름: {project_name}")
     
     # 토큰이 있는 경우 사용자 인증
     token = request.args.get('token')
     user_id = None
+    
+    print(f"🎯 토큰 존재: {token is not None}")
     
     if token:
         try:
             decoded_token = decode_token(token)
             user_id = decoded_token['sub']
             session['user_id'] = user_id
+            print(f"🎯 토큰 인증 성공: user_id={user_id}")
         except Exception as e:
+            print(f"❌ 토큰 인증 실패: {str(e)}")
             app.logger.error(f"Token validation failed: {str(e)}")
             emit('error', {'message': 'Invalid token'})
             return
     
     # 프로젝트 검색 (user_id가 있으면 권한 확인, 없으면 공개적으로 접근)
     if user_id:
+        print(f"🎯 토큰 사용자로 프로젝트 검색: user_id={user_id}")
         project = get_project_by_name(project_name, user_id)
         if not project:
+            print("❌ 프로젝트를 찾을 수 없음 (토큰 사용자)")
             emit('error', {'message': 'Project not found'})
             return
     else:
         # 토큰 없이 접근하는 경우 (오버레이 페이지 등)
+        print("🎯 토큰 없이 프로젝트 검색 (오버레이 페이지)")
         project = Project.query.filter_by(name=project_name).first()
         if not project:
+            print("❌ 프로젝트를 찾을 수 없음 (토큰 없음)")
             emit('error', {'message': 'Project not found'})
             return
+    
+    print(f"✅ 프로젝트 검색 성공: {project.name}")
     
     # 프로젝트 룸에 참여
     room = f'project_{project_name}'
