@@ -794,21 +794,29 @@ def handle_project_detail(project_name):
     owner_id = request.headers.get('X-Owner-Id')
     is_admin_mode = False
     
+    print(f"DEBUG: project_name={project_name}, admin_token={admin_token}, owner_id={owner_id}")
+    
     if admin_token and owner_id:
         # 관리자 토큰 검증
         try:
             decoded_token = jwt.decode(admin_token, app.config['SECRET_KEY'], algorithms=['HS256'])
             admin_user = User.query.get(decoded_token['user_id'])
+            print(f"DEBUG: admin_user={admin_user}, username={admin_user.username if admin_user else None}")
             if admin_user and admin_user.username == 'admin':
                 is_admin_mode = True
                 # 관리자 모드일 때는 지정된 owner_id로 프로젝트 조회
                 project = get_project_by_name(project_name, int(owner_id))
+                print(f"DEBUG: Admin mode - project found: {project is not None}")
             else:
                 project = get_project_by_name(project_name, current_user.id)
-        except:
+                print(f"DEBUG: Regular mode (invalid admin) - project found: {project is not None}")
+        except Exception as e:
+            print(f"DEBUG: Admin token decode error: {e}")
             project = get_project_by_name(project_name, current_user.id)
+            print(f"DEBUG: Regular mode (decode error) - project found: {project is not None}")
     else:
         project = get_project_by_name(project_name, current_user.id)
+        print(f"DEBUG: Regular mode (no admin headers) - project found: {project is not None}")
     
     # 프로젝트 접근 권한 확인
     if not project:
