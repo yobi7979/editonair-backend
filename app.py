@@ -788,12 +788,34 @@ def handle_projects():
 @auth_required('viewer')
 def handle_project_detail(project_name):
     current_user = get_current_user_from_token()
-    project = get_project_by_name(project_name, current_user.id)
+    
+    # 관리자 모드 확인
+    admin_token = request.headers.get('X-Admin-Token')
+    owner_id = request.headers.get('X-Owner-Id')
+    is_admin_mode = False
+    
+    if admin_token and owner_id:
+        # 관리자 토큰 검증
+        try:
+            decoded_token = jwt.decode(admin_token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            admin_user = User.query.get(decoded_token['user_id'])
+            if admin_user and admin_user.username == 'admin':
+                is_admin_mode = True
+                # 관리자 모드일 때는 지정된 owner_id로 프로젝트 조회
+                project = get_project_by_name(project_name, int(owner_id))
+            else:
+                project = get_project_by_name(project_name, current_user.id)
+        except:
+            project = get_project_by_name(project_name, current_user.id)
+    else:
+        project = get_project_by_name(project_name, current_user.id)
     
     # 프로젝트 접근 권한 확인
     if not project:
         return jsonify({'error': 'Project not found'}), 404
-    if not check_project_permission(current_user.id, project.id, 'viewer'):
+    
+    # 관리자 모드가 아닐 때만 권한 확인
+    if not is_admin_mode and not check_project_permission(current_user.id, project.id, 'viewer'):
         return jsonify({'error': 'Permission denied'}), 403
 
     if request.method == 'GET':
@@ -894,16 +916,30 @@ def handle_scene(scene_id):
         
         scene = Scene.query.get_or_404(scene_id)
         
-        # 씬의 프로젝트에 대한 권한 확인
-        if not check_project_permission(current_user.id, scene.project_id, 'viewer'):
+        # 관리자 모드 확인
+        admin_token = request.headers.get('X-Admin-Token')
+        owner_id = request.headers.get('X-Owner-Id')
+        is_admin_mode = False
+        
+        if admin_token and owner_id:
+            try:
+                decoded_token = jwt.decode(admin_token, app.config['SECRET_KEY'], algorithms=['HS256'])
+                admin_user = User.query.get(decoded_token['user_id'])
+                if admin_user and admin_user.username == 'admin':
+                    is_admin_mode = True
+            except:
+                pass
+        
+        # 씬의 프로젝트에 대한 권한 확인 (관리자 모드가 아닐 때만)
+        if not is_admin_mode and not check_project_permission(current_user.id, scene.project_id, 'viewer'):
             return jsonify({'error': 'Permission denied'}), 403
         
         if request.method == 'GET':
             return jsonify(scene_to_dict(scene))
         
         elif request.method == 'PUT':
-            # 편집 권한 확인
-            if not check_project_permission(current_user.id, scene.project_id, 'editor'):
+            # 편집 권한 확인 (관리자 모드가 아닐 때만)
+            if not is_admin_mode and not check_project_permission(current_user.id, scene.project_id, 'editor'):
                 return jsonify({'error': 'Permission denied'}), 403
                 
             data = request.get_json()
