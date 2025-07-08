@@ -78,23 +78,39 @@ except Exception as e:
 # 전역 변수들 (중복 제거)
 # socketio는 이미 위에서 초기화됨
 
-# 사용자별 송출 상태 관리 (메모리 기반)
+# 사용자별 송출 상태 (메모리 저장)
 user_broadcast_state = {}
 
-def get_user_broadcast_state(user_id):
-    """사용자별 송출 상태 가져오기"""
+def get_user_broadcast_state(user_id, channel_id=None):
+    """사용자 및 채널별 송출 상태 가져오기"""
+    # channel_id가 없으면 기본 채널 사용
+    if channel_id is None:
+        channel_id = 'default'
+    
+    # 사용자별 상태 초기화
     if user_id not in user_broadcast_state:
-        user_broadcast_state[user_id] = {
+        user_broadcast_state[user_id] = {}
+    
+    # 채널별 상태 초기화
+    if channel_id not in user_broadcast_state[user_id]:
+        user_broadcast_state[user_id][channel_id] = {
             'current_pushed_scene_id': None,
             'is_broadcasting': False
         }
-    return user_broadcast_state[user_id]
+    
+    return user_broadcast_state[user_id][channel_id]
 
-def set_user_pushed_scene(user_id, scene_id):
-    """사용자별 송출 씬 설정"""
-    state = get_user_broadcast_state(user_id)
+def set_user_pushed_scene(user_id, scene_id, channel_id=None):
+    """사용자 및 채널별 송출 씬 설정"""
+    state = get_user_broadcast_state(user_id, channel_id)
     state['current_pushed_scene_id'] = scene_id
     state['is_broadcasting'] = True if scene_id else False
+
+def get_user_room_name(user_id, channel_id=None):
+    """사용자 및 채널별 WebSocket 룸 이름 생성"""
+    if channel_id and channel_id != 'default':
+        return f'user_{user_id}_channel_{channel_id}'
+    return f'user_{user_id}'
 
 # --- Database Models ---
 
@@ -517,14 +533,15 @@ def handle_connect():
     token = request.args.get('token')
     project_id = request.args.get('project_id')
     user_id = request.args.get('user_id')
+    channel_id = request.args.get('channel_id', 'default')
     
-    # 토큰이 없는 경우 (오버레이 페이지) - user_id로 사용자별 룸 조인
+    # 토큰이 없는 경우 (오버레이 페이지) - user_id와 channel_id로 룸 조인
     if not token:
-        print(f"No token provided, checking user_id: {user_id}")
+        print(f"No token provided, checking user_id: {user_id}, channel_id: {channel_id}")
         if user_id:
             try:
                 user_id = int(user_id)
-                user_room = f'user_{user_id}'
+                user_room = get_user_room_name(user_id, channel_id)
                 join_room(user_room)
                 print(f"Overlay page joined user room: {user_room}")
                 return True
@@ -540,7 +557,7 @@ def handle_connect():
     try:
         decoded = decode_token(token)
         user_id = decoded['sub']
-        user_room = f'user_{user_id}'
+        user_room = get_user_room_name(user_id, channel_id)
         join_room(user_room)
         print(f"Authenticated user {user_id} joined room: {user_room}")
         return True
@@ -1050,8 +1067,10 @@ def overlay_project(project_name):
     try:
         print(f"Accessing overlay for project {project_name}")
         
-        # URL 파라미터에서 사용자 ID 가져오기
+        # URL 파라미터에서 사용자 ID와 채널 ID 가져오기
         user_id = request.args.get('user_id')
+        channel_id = request.args.get('channel_id', 'default')  # 기본값은 'default'
+        
         if not user_id:
             return "user_id parameter is required", 400
             
@@ -1069,14 +1088,14 @@ def overlay_project(project_name):
         project = get_project_by_name(project_name, user_id)
         if not project:
             return "Project not found", 404
-        print(f"Found project: {project.name}")
+        print(f"Found project: {project.name}, Channel: {channel_id}")
         
-        # 사용자별 송출 상태 확인
-        user_state = get_user_broadcast_state(user_id)
+        # 사용자 및 채널별 송출 상태 확인
+        user_state = get_user_broadcast_state(user_id, channel_id)
         scene = None
         
         if user_state['current_pushed_scene_id']:
-            print(f"Looking for pushed scene: {user_state['current_pushed_scene_id']}")
+            print(f"Looking for pushed scene: {user_state['current_pushed_scene_id']} (Channel: {channel_id})")
             scene = Scene.query.get(user_state['current_pushed_scene_id'])
             if scene:
                 print(f"Found pushed scene: {scene.name}")
@@ -1093,7 +1112,8 @@ def overlay_project(project_name):
                              scene=scene_to_dict(scene) if scene else None,
                              canvas_width=1920,
                              canvas_height=1080,
-                             user_id=user_id)  # 사용자 ID를 템플릿에 전달
+                             user_id=user_id,
+                             channel_id=channel_id)  # 채널 ID도 템플릿에 전달
     except Exception as e:
         print(f"Error in overlay_project: {str(e)}")
         import traceback
@@ -1121,26 +1141,33 @@ def push_scene(scene_id):
         if not current_user:
             return jsonify({'error': 'Authentication required'}), 401
         
-        global current_pushed_scene_id
+        data = request.get_json() or {}
+        channel_id = data.get('channel_id', 'default')  # 요청에서 채널 ID 가져오기
+        
         scene = Scene.query.get_or_404(scene_id)
         
         # 편집 권한 확인
         if not check_project_permission(current_user.id, scene.project_id, 'editor'):
             return jsonify({'error': 'Permission denied'}), 403
         
-
+        set_user_pushed_scene(current_user.id, scene_id, channel_id)
+        print(f"Scene {scene_id} pushed successfully to channel {channel_id}")
         
-        set_user_pushed_scene(current_user.id, scene_id)
-        print(f"Scene {scene_id} pushed successfully")
-        # 사용자별 룸으로 브로드캐스트
-        user_room = f'user_{current_user.id}'
+        # 사용자 및 채널별 룸으로 브로드캐스트
+        user_room = get_user_room_name(current_user.id, channel_id)
         socketio.emit('scene_change', {
             'scene_id': scene_id,
             'transition': 'fade',
             'duration': 1.0,
-            'clear_effects': True
+            'clear_effects': True,
+            'channel_id': channel_id
         }, room=user_room)
-        return jsonify({'status': 'success', 'scene_id': scene_id})
+        
+        return jsonify({
+            'status': 'success', 
+            'scene_id': scene_id,
+            'channel_id': channel_id
+        })
     except Exception as e:
         print(f"Error in push_scene: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -1153,23 +1180,33 @@ def out_scene(scene_id):
         if not current_user:
             return jsonify({'error': 'Authentication required'}), 401
         
+        data = request.get_json() or {}
+        channel_id = data.get('channel_id', 'default')  # 요청에서 채널 ID 가져오기
+        
         scene = Scene.query.get_or_404(scene_id)
         
         # 편집 권한 확인
         if not check_project_permission(current_user.id, scene.project_id, 'editor'):
             return jsonify({'error': 'Permission denied'}), 403
         
-        # 사용자 송출 상태 초기화
-        set_user_pushed_scene(current_user.id, None)
-        print(f"Scene {scene_id} out successfully")
-        # 사용자별 룸으로 브로드캐스트
-        user_room = f'user_{current_user.id}'
+        # 사용자 및 채널별 송출 상태 초기화
+        set_user_pushed_scene(current_user.id, None, channel_id)
+        print(f"Scene {scene_id} out successfully from channel {channel_id}")
+        
+        # 사용자 및 채널별 룸으로 브로드캐스트
+        user_room = get_user_room_name(current_user.id, channel_id)
         socketio.emit('scene_out', {
             'scene_id': scene_id,
             'transition': 'fade',
-            'duration': 1.0
+            'duration': 1.0,
+            'channel_id': channel_id
         }, room=user_room)
-        return jsonify({'status': 'success', 'scene_id': scene_id})
+        
+        return jsonify({
+            'status': 'success', 
+            'scene_id': scene_id,
+            'channel_id': channel_id
+        })
     except Exception as e:
         print(f"Error in out_scene: {str(e)}")
         return jsonify({'error': str(e)}), 500

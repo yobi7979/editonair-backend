@@ -459,7 +459,8 @@
         const socket = io({
             query: {
                 project_id: {{ project.id }},
-                user_id: {{ user_id }}
+                user_id: {{ user_id }},
+                channel_id: '{{ channel_id }}'
             }
         });
         const container = document.getElementById('overlay-container');
