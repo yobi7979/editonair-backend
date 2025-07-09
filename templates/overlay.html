@@ -494,9 +494,10 @@
         {% if scene %}
         const initialScene = {{ scene|tojson }};
         console.log('Initial scene data available:', initialScene);
-        // 초기에는 씬을 렌더링하지 않고 데이터만 저장
-        // currentScene = initialScene; // 주석 처리
-        // motionManager.updateScene(initialScene, false); // 주석 처리
+        // 백엔드에서 전달받은 초기 씬 데이터 사용
+        currentScene = initialScene;
+        motionManager.updateScene(initialScene, false);
+        console.log('✅ Initial scene applied from backend data');
         {% else %}
         console.log('No initial scene provided');
         {% endif %}
@@ -597,7 +598,8 @@
             return preloadedImages.has(imageUrl);
         }
 
-        // 초기에는 더미 씬으로 시작
+        // 초기 씬이 없을 때만 더미 씬으로 시작
+        {% if not scene %}
         console.log('🔄 Loading initial dummy scene...');
         fetch('/api/dummy-scene')
             .then(response => response.json())
@@ -625,6 +627,11 @@
                 // 즉시 프리로딩은 여전히 시도
                 immediatePreloadAllImages();
             });
+        {% else %}
+        // 초기 씬이 있으면 이미지 프리로딩만 시작
+        console.log('🚀 Initial scene already applied, starting image preloading...');
+        immediatePreloadAllImages();
+        {% endif %}
 
         // 웹소켓 이벤트 핸들러
         socket.on('connect', () => {
