@@ -868,6 +868,31 @@ def handle_project_detail(project_name):
     owner_id = request.headers.get('X-Owner-Id')
     is_admin_mode = False
 
+@app.route('/api/overlay/users/<username>/projects/<project_name>', methods=['GET'])
+def get_overlay_user_project(username, project_name):
+    """오버레이 페이지용 프로젝트 조회 API (인증 불필요)"""
+    try:
+        print(f"🔍 Overlay project request - User: {username}, Project: {project_name}")
+        
+        # 사용자명으로 사용자 조회
+        user = User.query.filter_by(username=username).first()
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+            
+        # 프로젝트 조회 (사용자별)
+        project = get_project_by_name(project_name, user.id)
+        if not project:
+            return jsonify({'error': 'Project not found'}), 404
+            
+        print(f"✅ Found project: {project.name} for user: {username}")
+        return jsonify(project_to_dict(project))
+        
+    except Exception as e:
+        print(f"❌ Error in get_overlay_user_project: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'error': f'Internal server error: {str(e)}'}), 500
+
 @app.route('/api/users/<username>/projects/<project_name>', methods=['GET', 'PUT', 'DELETE'])
 @auth_required('viewer')
 def handle_user_project_detail(username, project_name):

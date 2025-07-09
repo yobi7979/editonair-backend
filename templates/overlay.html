@@ -511,9 +511,9 @@
             console.log('🚀 즉시 모든 이미지 프리로딩 시작...');
             
             try {
-                // 프로젝트의 모든 씬 정보 가져오기 (사용자별 경로 사용)
+                // 프로젝트의 모든 씬 정보 가져오기 (오버레이용 API 사용)
                 const username = '{{ username }}';
-                const response = await fetch(`/api/users/${username}/projects/${projectName}`);
+                const response = await fetch(`/api/overlay/users/${username}/projects/${projectName}`);
                 const project = await response.json();
                 
                 if (!project.scenes) {
