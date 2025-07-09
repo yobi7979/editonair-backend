@@ -14,6 +14,9 @@ from urllib.parse import unquote
 # 라이브 상태 관리 시스템 import
 from live_state import live_state_manager
 
+# 백업 시스템 import
+from backup_db import backup_all, list_backups, restore_project_libraries, get_project_library_info
+
 from flask import Flask, jsonify, request, render_template, send_from_directory, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO, emit, join_room, leave_room, disconnect
@@ -2419,99 +2422,103 @@ def restore_database():
 @app.route('/api/admin/backup', methods=['POST'])
 @admin_required
 def backup_database():
-    """데이터베이스 백업 (관리자 전용)"""
+    """전체 시스템 백업 (데이터베이스 + 프로젝트 파일 + 라이브러리)"""
     try:
-        # SQLAlchemy ORM을 사용한 안전한 백업
-        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-        backup_filename = f'backup_{timestamp}.sql'
+        # 백업 실행
+        success = backup_all()
         
-        backup_content = []
-        backup_content.append("-- EditOnair Database Backup")
-        backup_content.append(f"-- Generated: {datetime.utcnow().isoformat()}")
-        backup_content.append("-- ")
-        backup_content.append("")
-        
-        try:
-            # 사용자 테이블 백업
-            users = User.query.all()
-            if users:
-                backup_content.append("-- User Table")
-                backup_content.append("DELETE FROM user WHERE id IN (SELECT id FROM user);")
-                for user in users:
-                    created_at = user.created_at.isoformat() if user.created_at else 'NULL'
-                    backup_content.append(f"INSERT INTO user (id, username, password, created_at, is_active) VALUES ({user.id}, '{user.username}', '{user.password}', '{created_at}', {user.is_active});")
-                backup_content.append("")
-            
-            # 프로젝트 테이블 백업
-            projects = Project.query.all()
-            if projects:
-                backup_content.append("-- Project Table")
-                backup_content.append("DELETE FROM project WHERE id IN (SELECT id FROM project);")
-                for project in projects:
-                    created_at = project.created_at.isoformat() if project.created_at else 'NULL'
-                    updated_at = project.updated_at.isoformat() if project.updated_at else 'NULL'
-                    backup_content.append(f"INSERT INTO project (id, name, created_at, updated_at, user_id) VALUES ({project.id}, '{project.name}', '{created_at}', '{updated_at}', {project.user_id});")
-                backup_content.append("")
-            
-            # 씬 테이블 백업
-            scenes = Scene.query.all()
-            if scenes:
-                backup_content.append("-- Scene Table")
-                backup_content.append("DELETE FROM scene WHERE id IN (SELECT id FROM scene);")
-                for scene in scenes:
-                    created_at = scene.created_at.isoformat() if scene.created_at else 'NULL'
-                    updated_at = scene.updated_at.isoformat() if scene.updated_at else 'NULL'
-                    backup_content.append(f"INSERT INTO scene (id, project_id, name, \"order\", duration, created_at, updated_at) VALUES ({scene.id}, {scene.project_id}, '{scene.name}', {scene.order}, {scene.duration}, '{created_at}', '{updated_at}');")
-                backup_content.append("")
-            
-            # 객체 테이블 백업
-            objects = Object.query.all()
-            if objects:
-                backup_content.append("-- Objects Table")
-                backup_content.append("DELETE FROM objects WHERE id IN (SELECT id FROM objects);")
-                for obj in objects:
-                    # JSON 문자열을 이스케이프
-                    properties = obj.properties.replace("'", "''") if obj.properties else ''
-                    in_motion = obj.in_motion.replace("'", "''") if obj.in_motion else ''
-                    out_motion = obj.out_motion.replace("'", "''") if obj.out_motion else ''
-                    timing = obj.timing.replace("'", "''") if obj.timing else ''
-                    
-                    created_at = obj.created_at.isoformat() if obj.created_at else 'NULL'
-                    updated_at = obj.updated_at.isoformat() if obj.updated_at else 'NULL'
-                    
-                    backup_content.append(f"INSERT INTO objects (id, name, type, \"order\", properties, in_motion, out_motion, timing, scene_id, created_at, updated_at) VALUES ({obj.id}, '{obj.name}', '{obj.type}', {obj.order}, '{properties}', '{in_motion}', '{out_motion}', '{timing}', {obj.scene_id}, '{created_at}', '{updated_at}');")
-                backup_content.append("")
-            
-            # 프로젝트 권한 테이블 백업
-            permissions = ProjectPermission.query.all()
-            if permissions:
-                backup_content.append("-- Project Permission Table")
-                backup_content.append("DELETE FROM project_permission WHERE id IN (SELECT id FROM project_permission);")
-                for perm in permissions:
-                    created_at = perm.created_at.isoformat() if perm.created_at else 'NULL'
-                    updated_at = perm.updated_at.isoformat() if perm.updated_at else 'NULL'
-                    backup_content.append(f"INSERT INTO project_permission (id, project_id, user_id, permission_type, created_at, updated_at) VALUES ({perm.id}, {perm.project_id}, {perm.user_id}, '{perm.permission_type}', '{created_at}', '{updated_at}');")
-                backup_content.append("")
-            
-            # 백업 내용을 문자열로 결합
-            backup_sql = "\n".join(backup_content)
-            
-            # 메모리에서 직접 반환
-            from flask import make_response
-            response = make_response(backup_sql)
-            response.headers['Content-Type'] = 'application/sql'
-            response.headers['Content-Disposition'] = f'attachment; filename="{backup_filename}"'
-            response.headers['Content-Length'] = len(backup_sql.encode('utf-8'))
-            
-            return response
-            
-        except Exception as e:
-            app.logger.error(f'백업 생성 중 오류: {str(e)}')
-            return jsonify({'error': f'백업 생성 중 오류 발생: {str(e)}'}), 500
+        if success:
+            return jsonify({
+                'success': True,
+                'message': '전체 시스템 백업이 성공적으로 완료되었습니다.',
+                'timestamp': datetime.now().isoformat()
+            }), 200
+        else:
+            return jsonify({
+                'success': False,
+                'message': '백업 중 오류가 발생했습니다.'
+            }), 500
             
     except Exception as e:
-        app.logger.error(f'백업 처리 중 오류: {str(e)}')
-        return jsonify({'error': f'백업 처리 중 오류 발생: {str(e)}'}), 500
+        print(f"Backup error: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'백업 중 오류가 발생했습니다: {str(e)}'
+        }), 500
+
+@app.route('/api/admin/backups', methods=['GET'])
+@admin_required
+def get_backup_list():
+    """백업 목록 조회"""
+    try:
+        backups = list_backups()
+        return jsonify({
+            'success': True,
+            'backups': backups
+        }), 200
+    except Exception as e:
+        print(f"Backup list error: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'백업 목록 조회 중 오류가 발생했습니다: {str(e)}'
+        }), 500
+
+@app.route('/api/admin/backup/<timestamp>/restore', methods=['POST'])
+@admin_required
+def restore_backup(timestamp):
+    """특정 백업에서 라이브러리 복구"""
+    try:
+        data = request.get_json()
+        restore_dir = data.get('restore_dir', 'projects')
+        
+        # 백업 파일 경로
+        backup_dir = os.path.join(os.path.dirname(__file__), 'backups')
+        backup_file = os.path.join(backup_dir, f'libraries_{timestamp}.zip')
+        
+        if not os.path.exists(backup_file):
+            return jsonify({
+                'success': False,
+                'message': f'백업 파일을 찾을 수 없습니다: {timestamp}'
+            }), 404
+        
+        # 복구 실행
+        success = restore_project_libraries(backup_file, restore_dir)
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': f'라이브러리 복구가 성공적으로 완료되었습니다.',
+                'timestamp': timestamp
+            }), 200
+        else:
+            return jsonify({
+                'success': False,
+                'message': '라이브러리 복구 중 오류가 발생했습니다.'
+            }), 500
+            
+    except Exception as e:
+        print(f"Restore error: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'복구 중 오류가 발생했습니다: {str(e)}'
+        }), 500
+
+@app.route('/api/admin/libraries/info', methods=['GET'])
+@admin_required
+def get_libraries_info():
+    """프로젝트별 라이브러리 정보 조회"""
+    try:
+        libraries_info = get_project_library_info()
+        return jsonify({
+            'success': True,
+            'libraries_info': libraries_info
+        }), 200
+    except Exception as e:
+        print(f"Libraries info error: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'라이브러리 정보 조회 중 오류가 발생했습니다: {str(e)}'
+        }), 500
 
 # --- 라이브 컨트롤 API ---
 
