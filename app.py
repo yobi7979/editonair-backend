@@ -2489,9 +2489,18 @@ def backup_database():
                 update_backup_progress(user_id, 'zip', '백업 정보를 ZIP에 추가했습니다', 50)
                 
                 # 라이브러리 파일들을 ZIP에 추가
-                projects_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'projects')
+                current_dir = os.path.dirname(__file__)  # backend/
+                parent_dir = os.path.dirname(current_dir)  # graphics-editor/
+                projects_dir = os.path.join(parent_dir, 'projects')  # graphics-editor/projects/
+                
+                print(f"🔍 백업 디버그: current_dir = {current_dir}")
+                print(f"🔍 백업 디버그: parent_dir = {parent_dir}")
+                print(f"🔍 백업 디버그: projects_dir = {projects_dir}")
+                print(f"🔍 백업 디버그: projects_dir exists = {os.path.exists(projects_dir)}")
+                
                 if os.path.exists(projects_dir):
                     project_dirs = [d for d in os.listdir(projects_dir) if os.path.isdir(os.path.join(projects_dir, d))]
+                    print(f"🔍 백업 디버그: 발견된 프로젝트 디렉토리들 = {project_dirs}")
                     total_projects = len(project_dirs)
                     
                     # 전체 파일 수 미리 계산
@@ -2500,10 +2509,24 @@ def backup_database():
                     for project_dir in project_dirs:
                         project_path = os.path.join(projects_dir, project_dir)
                         library_path = os.path.join(project_path, 'library')
+                        print(f"🔍 백업 디버그: 프로젝트 '{project_dir}' library_path = {library_path}")
+                        print(f"🔍 백업 디버그: library_path exists = {os.path.exists(library_path)}")
+                        
                         if os.path.exists(library_path):
                             file_count = sum(len(files) for _, _, files in os.walk(library_path))
                             project_files_count[project_dir] = file_count
                             total_files += file_count
+                            print(f"🔍 백업 디버그: 프로젝트 '{project_dir}' 파일 수 = {file_count}")
+                            
+                            # 실제 파일 목록 출력
+                            print(f"🔍 백업 디버그: 프로젝트 '{project_dir}' 파일 목록:")
+                            for root, dirs, files in os.walk(library_path):
+                                for file in files:
+                                    file_path = os.path.join(root, file)
+                                    relative_path = os.path.relpath(file_path, library_path)
+                                    print(f"  - {relative_path} (전체 경로: {file_path})")
+                        else:
+                            print(f"🔍 백업 디버그: 프로젝트 '{project_dir}' 라이브러리 폴더가 존재하지 않음")
                     
                     processed_files = 0
                     for i, project_dir in enumerate(project_dirs):
@@ -2530,9 +2553,8 @@ def backup_database():
                                 arcname = os.path.join(f'projects/{project_dir}/library', relative_path)
                                 zipf.write(file_path, arcname)
                                 
-                                # 디버그 로그 (첫 번째 파일과 마지막 파일만)
-                                if j == 0 or j == len(all_files) - 1:
-                                    print(f"백업 파일 추가: {file_path} -> {arcname}")
+                                # 모든 파일에 대한 디버그 로그
+                                print(f"✅ 백업 파일 추가: {file_path} -> {arcname}")
                                 
                                 # 파일별 진행상황 업데이트 (10개 파일마다)
                                 processed_files += 1
@@ -2541,6 +2563,14 @@ def backup_database():
                                     update_backup_progress(user_id, 'libraries', f'전체 라이브러리 압축 중... ({processed_files}/{total_files} 파일)', progress_percent)
             
             update_backup_progress(user_id, 'complete', '백업 파일 생성이 완료되었습니다. 다운로드를 시작합니다...', 100)
+            
+            # ZIP 파일 내용 확인
+            zip_buffer.seek(0)
+            with zipfile.ZipFile(zip_buffer, 'r') as check_zip:
+                zip_contents = check_zip.namelist()
+                print(f"📦 백업 ZIP 파일 내용:")
+                for item in zip_contents:
+                    print(f"  - {item}")
             
             # ZIP 파일을 응답으로 반환
             zip_buffer.seek(0)
