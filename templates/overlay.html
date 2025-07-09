@@ -969,7 +969,18 @@
 
                 case 'image':
                     const img = document.createElement('img');
-                    img.src = obj.properties.src || '';
+                    
+                    // 사용자별 이미지 URL 생성
+                    let imgSrc = obj.properties.src || '';
+                    const userId = {{ user_id }};
+                    
+                    // 이미지 URL에 사용자 ID 추가 (프로젝트 라이브러리 이미지인 경우)
+                    if (imgSrc.includes('/projects/') && imgSrc.includes('/library/images/') && userId) {
+                        const separator = imgSrc.includes('?') ? '&' : '?';
+                        imgSrc += `${separator}user_id=${userId}`;
+                    }
+                    
+                    img.src = imgSrc;
                     img.style.width = obj.properties.width ? obj.properties.width + 'px' : '100%';
                     img.style.height = obj.properties.height ? obj.properties.height + 'px' : '100%';
                     img.style.objectFit = 'contain';

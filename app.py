@@ -1146,6 +1146,55 @@ def overlay_project(project_name):
         print(traceback.format_exc())
         return str(e), 500
 
+@app.route('/overlay/user/<username>/project/<project_name>')
+def overlay_user_project(username, project_name):
+    try:
+        print(f"Accessing overlay for user {username}, project {project_name}")
+        
+        # URL 파라미터에서 채널 ID 가져오기
+        channel_id = request.args.get('channel_id', 'default')  # 기본값은 'default'
+        
+        # 사용자명으로 사용자 조회
+        user = User.query.filter_by(username=username).first()
+        if not user:
+            return "User not found", 404
+            
+        # 프로젝트 조회 (사용자별)
+        project = get_project_by_name(project_name, user.id)
+        if not project:
+            return "Project not found", 404
+        print(f"Found project: {project.name}, Channel: {channel_id}")
+        
+        # 사용자 및 채널별 송출 상태 확인
+        user_state = get_user_broadcast_state(user.id, channel_id)
+        scene = None
+        
+        if user_state['current_pushed_scene_id']:
+            print(f"Looking for pushed scene: {user_state['current_pushed_scene_id']} (Channel: {channel_id})")
+            scene = Scene.query.get(user_state['current_pushed_scene_id'])
+            if scene:
+                print(f"Found pushed scene: {scene.name}")
+        
+        if not scene and project.scenes:
+            print("Using first scene from project")
+            scene = project.scenes[0]
+            if scene:
+                print(f"Found first scene: {scene.name}")
+        
+        print(f"Rendering template with scene: {scene.name if scene else 'None'}")
+        return render_template('overlay.html', 
+                             project=project, 
+                             scene=scene_to_dict(scene) if scene else None,
+                             canvas_width=1920,
+                             canvas_height=1080,
+                             user_id=user.id,
+                             channel_id=channel_id)  # 채널 ID도 템플릿에 전달
+    except Exception as e:
+        print(f"Error in overlay_user_project: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return str(e), 500
+
 @app.route('/overlay/project/<project_name>/scene/<int:scene_id>')
 def overlay_scene(project_name, scene_id):
     # 오버레이 페이지는 인증 없이 접근 가능하므로 프로젝트 이름으로만 검색
@@ -2042,13 +2091,30 @@ def serve_project_image(project_name, filename):
     # URL 디코딩
     decoded_filename = unquote(filename)
     
-    # 프로젝트 정보를 가져와서 소유자 ID 확인
-    project = Project.query.filter_by(name=project_name).first()
-    if not project:
-        return jsonify({'error': 'Project not found'}), 404
+    # URL 파라미터에서 사용자 ID 가져오기
+    user_id = request.args.get('user_id')
     
-    # 프로젝트 소유자의 폴더 구조 사용 (사용자별 구조)
-    project_folder = get_project_folder(project_name, project.user_id)
+    if user_id:
+        try:
+            user_id = int(user_id)
+            # 사용자별 프로젝트 조회
+            project = get_project_by_name(project_name, user_id)
+            if not project:
+                return jsonify({'error': 'Project not found'}), 404
+            
+            # 사용자별 폴더 구조 사용
+            project_folder = get_project_folder(project_name, user_id)
+        except (ValueError, TypeError):
+            return jsonify({'error': 'Invalid user_id parameter'}), 400
+    else:
+        # 기존 방식 (하위 호환성)
+        project = Project.query.filter_by(name=project_name).first()
+        if not project:
+            return jsonify({'error': 'Project not found'}), 404
+        
+        # 프로젝트 소유자의 폴더 구조 사용
+        project_folder = get_project_folder(project_name, project.user_id)
+    
     images_path = os.path.join(project_folder, 'library', 'images')
     
     # 파일이 존재하는지 확인
@@ -2084,13 +2150,30 @@ def serve_project_thumbnail(project_name, filename):
     # URL 디코딩
     decoded_filename = unquote(filename)
     
-    # 프로젝트 정보를 가져와서 소유자 ID 확인
-    project = Project.query.filter_by(name=project_name).first()
-    if not project:
-        return jsonify({'error': 'Project not found'}), 404
+    # URL 파라미터에서 사용자 ID 가져오기
+    user_id = request.args.get('user_id')
     
-    # 프로젝트 소유자의 폴더 구조 사용
-    project_folder = get_project_folder(project_name, project.user_id)
+    if user_id:
+        try:
+            user_id = int(user_id)
+            # 사용자별 프로젝트 조회
+            project = get_project_by_name(project_name, user_id)
+            if not project:
+                return jsonify({'error': 'Project not found'}), 404
+            
+            # 사용자별 폴더 구조 사용
+            project_folder = get_project_folder(project_name, user_id)
+        except (ValueError, TypeError):
+            return jsonify({'error': 'Invalid user_id parameter'}), 400
+    else:
+        # 기존 방식 (하위 호환성)
+        project = Project.query.filter_by(name=project_name).first()
+        if not project:
+            return jsonify({'error': 'Project not found'}), 404
+        
+        # 프로젝트 소유자의 폴더 구조 사용
+        project_folder = get_project_folder(project_name, project.user_id)
+    
     thumbnails_path = os.path.join(project_folder, 'library', 'thumbnails')
     
     # 파일이 존재하는지 확인
