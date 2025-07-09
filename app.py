@@ -2422,22 +2422,51 @@ def restore_database():
 @app.route('/api/admin/backup', methods=['POST'])
 @admin_required
 def backup_database():
-    """전체 시스템 백업 (다운로드용 JSON 생성)"""
+    """전체 시스템 백업 (JSON + 라이브러리 ZIP 다운로드)"""
     try:
         with app.app_context():
             # 백업 데이터 생성
             backup_data = create_backup_data()
             
-            # JSON 파일로 다운로드
-            from flask import make_response
-            import json
+            # 라이브러리 파일들을 ZIP으로 압축
+            import zipfile
+            import io
             
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f'editonair_backup_{timestamp}.json'
             
-            response = make_response(json.dumps(backup_data, indent=2, ensure_ascii=False))
-            response.headers['Content-Type'] = 'application/json'
-            response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+            # 메모리에 ZIP 파일 생성
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                # JSON 백업 데이터를 ZIP에 추가
+                json_data = json.dumps(backup_data, indent=2, ensure_ascii=False)
+                zipf.writestr('backup_info.json', json_data)
+                
+                # 라이브러리 파일들을 ZIP에 추가
+                projects_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'projects')
+                if os.path.exists(projects_dir):
+                    for project_dir in os.listdir(projects_dir):
+                        project_path = os.path.join(projects_dir, project_dir)
+                        if not os.path.isdir(project_path):
+                            continue
+                        
+                        library_path = os.path.join(project_path, 'library')
+                        if not os.path.exists(library_path):
+                            continue
+                        
+                        # 프로젝트별 라이브러리 폴더를 ZIP에 추가
+                        for root, dirs, files in os.walk(library_path):
+                            for file in files:
+                                file_path = os.path.join(root, file)
+                                # ZIP 내에서의 상대 경로
+                                arcname = os.path.join(f'projects/{project_dir}', 
+                                                     os.path.relpath(file_path, project_path))
+                                zipf.write(file_path, arcname)
+            
+            # ZIP 파일을 응답으로 반환
+            zip_buffer.seek(0)
+            response = make_response(zip_buffer.getvalue())
+            response.headers['Content-Type'] = 'application/zip'
+            response.headers['Content-Disposition'] = f'attachment; filename="editonair_backup_{timestamp}.zip"'
             
             return response
             
@@ -2489,10 +2518,12 @@ def create_backup_data():
         print(f"Database backup error: {e}")
         db_backup['error'] = str(e)
     
-    # 라이브러리 정보
+    # 라이브러리 정보 및 파일 목록
     libraries_info = {}
+    libraries_files = {}
     try:
         libraries_info = get_project_library_info()
+        libraries_files = get_libraries_files_info()
     except Exception as e:
         print(f"Libraries info error: {e}")
         libraries_info['error'] = str(e)
@@ -2502,14 +2533,95 @@ def create_backup_data():
         'timestamp': timestamp,
         'backup_date': datetime.now().isoformat(),
         'version': '1.0',
-        'description': 'EditOnair 전체 시스템 백업'
+        'description': 'EditOnair 전체 시스템 백업 (데이터베이스 + 라이브러리 정보)'
     }
     
     return {
         'metadata': backup_metadata,
         'database': db_backup,
-        'libraries_info': libraries_info
+        'libraries_info': libraries_info,
+        'libraries_files': libraries_files
     }
+
+def get_libraries_files_info():
+    """프로젝트별 라이브러리 파일 정보 수집"""
+    projects_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'projects')
+    if not os.path.exists(projects_dir):
+        return {}
+    
+    libraries_files = {}
+    
+    for project_dir in os.listdir(projects_dir):
+        project_path = os.path.join(projects_dir, project_dir)
+        if not os.path.isdir(project_path):
+            continue
+            
+        library_path = os.path.join(project_path, 'library')
+        if not os.path.exists(library_path):
+            libraries_files[project_dir] = {
+                'images': [],
+                'sequences': [],
+                'thumbnails': []
+            }
+            continue
+        
+        project_files = {
+            'images': [],
+            'sequences': [],
+            'thumbnails': []
+        }
+        
+        # 이미지 파일 정보
+        images_path = os.path.join(library_path, 'images')
+        if os.path.exists(images_path):
+            for file in os.listdir(images_path):
+                if file.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
+                    file_path = os.path.join(images_path, file)
+                    if os.path.isfile(file_path):
+                        project_files['images'].append({
+                            'filename': file,
+                            'size': os.path.getsize(file_path),
+                            'path': f'library/images/{file}'
+                        })
+        
+        # 썸네일 파일 정보
+        thumbnails_path = os.path.join(library_path, 'thumbnails')
+        if os.path.exists(thumbnails_path):
+            for file in os.listdir(thumbnails_path):
+                if file.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
+                    file_path = os.path.join(thumbnails_path, file)
+                    if os.path.isfile(file_path):
+                        project_files['thumbnails'].append({
+                            'filename': file,
+                            'size': os.path.getsize(file_path),
+                            'path': f'library/thumbnails/{file}'
+                        })
+        
+        # 시퀀스 파일 정보
+        sequences_path = os.path.join(library_path, 'sequences')
+        if os.path.exists(sequences_path):
+            for seq_dir in os.listdir(sequences_path):
+                seq_path = os.path.join(sequences_path, seq_dir)
+                if os.path.isdir(seq_path):
+                    seq_files = []
+                    for root, dirs, files in os.walk(seq_path):
+                        for file in files:
+                            file_path = os.path.join(root, file)
+                            if os.path.isfile(file_path):
+                                rel_path = os.path.relpath(file_path, seq_path)
+                                seq_files.append({
+                                    'filename': file,
+                                    'path': f'library/sequences/{seq_dir}/{rel_path}',
+                                    'size': os.path.getsize(file_path)
+                                })
+                    project_files['sequences'].append({
+                        'sequence_name': seq_dir,
+                        'files': seq_files
+                    })
+        
+        libraries_files[project_dir] = project_files
+    
+    return libraries_files
 
 @app.route('/api/admin/backups', methods=['GET'])
 @admin_required
@@ -2529,45 +2641,218 @@ def get_backup_list():
             'message': f'백업 목록 조회 중 오류가 발생했습니다: {str(e)}'
         }), 500
 
-@app.route('/api/admin/backup/<timestamp>/restore', methods=['POST'])
+@app.route('/api/admin/restore', methods=['POST'])
 @admin_required
-def restore_backup(timestamp):
-    """특정 백업에서 라이브러리 복구"""
+def restore_backup():
+    """백업 파일에서 복구"""
     try:
-        data = request.get_json()
-        restore_dir = data.get('restore_dir', 'projects')
-        
-        # 백업 파일 경로
-        backup_dir = os.path.join(os.path.dirname(__file__), 'backups')
-        backup_file = os.path.join(backup_dir, f'libraries_{timestamp}.zip')
-        
-        if not os.path.exists(backup_file):
+        if 'backup_file' not in request.files:
             return jsonify({
                 'success': False,
-                'message': f'백업 파일을 찾을 수 없습니다: {timestamp}'
-            }), 404
+                'message': '백업 파일을 업로드해주세요.'
+            }), 400
         
-        # 복구 실행
-        success = restore_project_libraries(backup_file, restore_dir)
-        
-        if success:
-            return jsonify({
-                'success': True,
-                'message': f'라이브러리 복구가 성공적으로 완료되었습니다.',
-                'timestamp': timestamp
-            }), 200
-        else:
+        backup_file = request.files['backup_file']
+        if backup_file.filename == '':
             return jsonify({
                 'success': False,
-                'message': '라이브러리 복구 중 오류가 발생했습니다.'
-            }), 500
+                'message': '백업 파일을 선택해주세요.'
+            }), 400
+        
+        # 파일 확장자 확인
+        if not backup_file.filename.endswith('.zip'):
+            return jsonify({
+                'success': False,
+                'message': 'ZIP 파일만 업로드 가능합니다.'
+            }), 400
+        
+        with app.app_context():
+            # ZIP 파일 처리
+            import zipfile
+            import io
+            import json
             
+            # ZIP 파일 읽기
+            zip_data = io.BytesIO(backup_file.read())
+            
+            with zipfile.ZipFile(zip_data, 'r') as zipf:
+                # 백업 정보 JSON 읽기
+                if 'backup_info.json' not in zipf.namelist():
+                    return jsonify({
+                        'success': False,
+                        'message': '백업 정보 파일을 찾을 수 없습니다.'
+                    }), 400
+                
+                backup_info = json.loads(zipf.read('backup_info.json').decode('utf-8'))
+                
+                # 복구 옵션 확인
+                restore_database = request.form.get('restore_database', 'false').lower() == 'true'
+                restore_libraries = request.form.get('restore_libraries', 'false').lower() == 'true'
+                
+                if not restore_database and not restore_libraries:
+                    return jsonify({
+                        'success': False,
+                        'message': '복구할 항목을 선택해주세요.'
+                    }), 400
+                
+                # 데이터베이스 복구
+                if restore_database:
+                    success = restore_database_from_backup(backup_info['database'])
+                    if not success:
+                        return jsonify({
+                            'success': False,
+                            'message': '데이터베이스 복구 중 오류가 발생했습니다.'
+                        }), 500
+                
+                # 라이브러리 복구
+                if restore_libraries:
+                    success = restore_libraries_from_zip(zipf, backup_info.get('libraries_files', {}))
+                    if not success:
+                        return jsonify({
+                            'success': False,
+                            'message': '라이브러리 복구 중 오류가 발생했습니다.'
+                        }), 500
+                
+                return jsonify({
+                    'success': True,
+                    'message': '복구가 성공적으로 완료되었습니다.',
+                    'restored_database': restore_database,
+                    'restored_libraries': restore_libraries
+                }), 200
+                
     except Exception as e:
         print(f"Restore error: {e}")
         return jsonify({
             'success': False,
             'message': f'복구 중 오류가 발생했습니다: {str(e)}'
         }), 500
+
+def restore_database_from_backup(db_data):
+    """백업 데이터에서 데이터베이스 복구"""
+    try:
+        # 기존 데이터 삭제 (순서 주의)
+        Object.query.delete()
+        Scene.query.delete()
+        ProjectPermission.query.delete()
+        Project.query.delete()
+        User.query.delete()
+        
+        # 사용자 복구
+        for user_data in db_data.get('users', []):
+            user = User(
+                id=user_data['id'],
+                username=user_data['username'],
+                password=user_data['password'],
+                created_at=datetime.fromisoformat(user_data['created_at']) if user_data['created_at'] else None,
+                is_active=user_data['is_active']
+            )
+            db.session.add(user)
+        
+        # 프로젝트 복구
+        for project_data in db_data.get('projects', []):
+            project = Project(
+                id=project_data['id'],
+                name=project_data['name'],
+                created_at=datetime.fromisoformat(project_data['created_at']) if project_data['created_at'] else None,
+                updated_at=datetime.fromisoformat(project_data['updated_at']) if project_data['updated_at'] else None,
+                user_id=project_data['user_id']
+            )
+            db.session.add(project)
+        
+        # 씬 복구
+        for scene_data in db_data.get('scenes', []):
+            scene = Scene(
+                id=scene_data['id'],
+                project_id=scene_data['project_id'],
+                name=scene_data['name'],
+                order=scene_data['order'],
+                duration=scene_data['duration'],
+                created_at=datetime.fromisoformat(scene_data['created_at']) if scene_data['created_at'] else None,
+                updated_at=datetime.fromisoformat(scene_data['updated_at']) if scene_data['updated_at'] else None
+            )
+            db.session.add(scene)
+        
+        # 객체 복구
+        for object_data in db_data.get('objects', []):
+            obj = Object(
+                id=object_data['id'],
+                name=object_data['name'],
+                type=object_data['type'],
+                order=object_data['order'],
+                properties=object_data['properties'],
+                in_motion=object_data['in_motion'],
+                out_motion=object_data['out_motion'],
+                timing=object_data['timing'],
+                scene_id=object_data['scene_id'],
+                created_at=datetime.fromisoformat(object_data['created_at']) if object_data['created_at'] else None,
+                updated_at=datetime.fromisoformat(object_data['updated_at']) if object_data['updated_at'] else None
+            )
+            db.session.add(obj)
+        
+        # 권한 복구
+        for perm_data in db_data.get('permissions', []):
+            perm = ProjectPermission(
+                id=perm_data['id'],
+                project_id=perm_data['project_id'],
+                user_id=perm_data['user_id'],
+                permission_type=perm_data['permission_type'],
+                created_at=datetime.fromisoformat(perm_data['created_at']) if perm_data['created_at'] else None,
+                updated_at=datetime.fromisoformat(perm_data['updated_at']) if perm_data['updated_at'] else None
+            )
+            db.session.add(perm)
+        
+        db.session.commit()
+        return True
+        
+    except Exception as e:
+        print(f"Database restore error: {e}")
+        db.session.rollback()
+        return False
+
+def restore_libraries_from_zip(zipf, libraries_files):
+    """ZIP 파일에서 라이브러리 복구"""
+    try:
+        projects_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'projects')
+        
+        for project_name, project_files in libraries_files.items():
+            project_dir = os.path.join(projects_dir, project_name)
+            os.makedirs(project_dir, exist_ok=True)
+            
+            # 프로젝트별 파일 복구
+            for file_type, files in project_files.items():
+                if file_type == 'images':
+                    for file_info in files:
+                        zip_path = f'projects/{project_name}/{file_info["path"]}'
+                        if zip_path in zipf.namelist():
+                            target_path = os.path.join(project_dir, file_info["path"])
+                            os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                            with zipf.open(zip_path) as source, open(target_path, 'wb') as target:
+                                shutil.copyfileobj(source, target)
+                
+                elif file_type == 'thumbnails':
+                    for file_info in files:
+                        zip_path = f'projects/{project_name}/{file_info["path"]}'
+                        if zip_path in zipf.namelist():
+                            target_path = os.path.join(project_dir, file_info["path"])
+                            os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                            with zipf.open(zip_path) as source, open(target_path, 'wb') as target:
+                                shutil.copyfileobj(source, target)
+                
+                elif file_type == 'sequences':
+                    for seq_info in files:
+                        for file_info in seq_info['files']:
+                            zip_path = f'projects/{project_name}/{file_info["path"]}'
+                            if zip_path in zipf.namelist():
+                                target_path = os.path.join(project_dir, file_info["path"])
+                                os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                                with zipf.open(zip_path) as source, open(target_path, 'wb') as target:
+                                    shutil.copyfileobj(source, target)
+        
+        return True
+        
+    except Exception as e:
+        print(f"Libraries restore error: {e}")
+        return False
 
 @app.route('/api/admin/libraries/info', methods=['GET'])
 @admin_required
