@@ -2471,6 +2471,21 @@ def backup_database():
             backup_data = create_backup_data()
             update_backup_progress(user_id, 'database', '데이터베이스 정보 수집 완료', 30)
             
+            # 라이브러리 파일 정보도 백업 데이터에 포함
+            print(f"🔍 백업 데이터의 라이브러리 파일 정보:")
+            if 'libraries_files' in backup_data:
+                for project_name, project_files in backup_data['libraries_files'].items():
+                    print(f"  - 프로젝트 '{project_name}':")
+                    for file_type, files in project_files.items():
+                        print(f"    * {file_type}: {len(files)}개 파일")
+                        for file_info in files:
+                            if isinstance(file_info, dict):
+                                print(f"      - {file_info.get('filename', 'unknown')} ({file_info.get('path', 'unknown')})")
+                            else:
+                                print(f"      - {file_info}")
+            else:
+                print("  - 라이브러리 파일 정보가 없습니다.")
+            
             # 라이브러리 파일들을 ZIP으로 압축
             import zipfile
             import io
@@ -2536,9 +2551,6 @@ def backup_database():
                         if os.path.exists(library_path):
                             file_count = project_files_count.get(project_dir, 0)
                             update_backup_progress(user_id, 'libraries', f'프로젝트 "{project_dir}" 라이브러리를 압축하고 있습니다... ({i+1}/{total_projects}, {file_count}개 파일)', 50 + (i * 30 // total_projects))
-                        else:
-                            update_backup_progress(user_id, 'libraries', f'프로젝트 "{project_dir}" 라이브러리 폴더가 없습니다. ({i+1}/{total_projects})', 50 + (i * 30 // total_projects))
-                            continue
                             
                             # 프로젝트별 라이브러리 폴더를 ZIP에 추가
                             all_files = []
@@ -2546,21 +2558,28 @@ def backup_database():
                                 for file in files:
                                     all_files.append((root, file))
                             
+                            print(f"🔍 백업 디버그: 프로젝트 '{project_dir}'에서 {len(all_files)}개 파일 발견")
+                            
                             for j, (root, file) in enumerate(all_files):
                                 file_path = os.path.join(root, file)
                                 # ZIP 내에서의 상대 경로 (library 폴더 기준)
                                 relative_path = os.path.relpath(file_path, library_path)
                                 arcname = os.path.join(f'projects/{project_dir}/library', relative_path)
-                                zipf.write(file_path, arcname)
                                 
-                                # 모든 파일에 대한 디버그 로그
-                                print(f"✅ 백업 파일 추가: {file_path} -> {arcname}")
+                                try:
+                                    zipf.write(file_path, arcname)
+                                    print(f"✅ 백업 파일 추가: {file_path} -> {arcname}")
+                                except Exception as e:
+                                    print(f"❌ 백업 파일 추가 실패: {file_path} -> {arcname}, 오류: {e}")
                                 
                                 # 파일별 진행상황 업데이트 (10개 파일마다)
                                 processed_files += 1
                                 if (processed_files % 10 == 0) or (j == len(all_files) - 1):
                                     progress_percent = 50 + (processed_files * 30 // total_files) if total_files > 0 else 80
                                     update_backup_progress(user_id, 'libraries', f'전체 라이브러리 압축 중... ({processed_files}/{total_files} 파일)', progress_percent)
+                        else:
+                            update_backup_progress(user_id, 'libraries', f'프로젝트 "{project_dir}" 라이브러리 폴더가 없습니다. ({i+1}/{total_projects})', 50 + (i * 30 // total_projects))
+                            continue
             
             update_backup_progress(user_id, 'complete', '백업 파일 생성이 완료되었습니다. 다운로드를 시작합니다...', 100)
             
