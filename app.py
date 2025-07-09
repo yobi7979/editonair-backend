@@ -101,70 +101,29 @@ backup_progress = {}
 restore_progress = {}
 
 def get_user_broadcast_state(user_id, channel_id=None):
-    """사용자 및 채널별 송출 상태 가져오기 (데이터베이스 기반)"""
+    """사용자 및 채널별 송출 상태 가져오기"""
     # channel_id가 없으면 기본 채널 사용
     if channel_id is None:
         channel_id = 'default'
     
-    try:
-        # 데이터베이스에서 송출 상태 조회
-        broadcast_state = BroadcastState.query.filter_by(
-            user_id=user_id, 
-            channel_id=channel_id
-        ).first()
-        
-        if broadcast_state:
-            return {
-                'current_pushed_scene_id': broadcast_state.current_pushed_scene_id,
-                'is_broadcasting': broadcast_state.is_broadcasting
-            }
-        else:
-            # 상태가 없으면 기본값 반환
-            return {
+    # 사용자별 상태 초기화
+    if user_id not in user_broadcast_state:
+        user_broadcast_state[user_id] = {}
+    
+    # 채널별 상태 초기화
+    if channel_id not in user_broadcast_state[user_id]:
+        user_broadcast_state[user_id][channel_id] = {
             'current_pushed_scene_id': None,
             'is_broadcasting': False
         }
-    except Exception as e:
-        print(f"Error getting broadcast state: {e}")
-        return {
-            'current_pushed_scene_id': None,
-            'is_broadcasting': False
-        }
+    
+    return user_broadcast_state[user_id][channel_id]
 
 def set_user_pushed_scene(user_id, scene_id, channel_id=None):
-    """사용자 및 채널별 송출 씬 설정 (데이터베이스 기반)"""
-    # channel_id가 없으면 기본 채널 사용
-    if channel_id is None:
-        channel_id = 'default'
-    
-    try:
-        # 기존 송출 상태 조회 또는 생성
-        broadcast_state = BroadcastState.query.filter_by(
-            user_id=user_id, 
-            channel_id=channel_id
-        ).first()
-        
-        if broadcast_state:
-            # 기존 상태 업데이트
-            broadcast_state.current_pushed_scene_id = scene_id
-            broadcast_state.is_broadcasting = True if scene_id else False
-            broadcast_state.updated_at = datetime.utcnow()
-        else:
-            # 새로운 상태 생성
-            broadcast_state = BroadcastState(
-                user_id=user_id,
-                channel_id=channel_id,
-                current_pushed_scene_id=scene_id,
-                is_broadcasting=True if scene_id else False
-            )
-            db.session.add(broadcast_state)
-        
-        db.session.commit()
-        print(f"Broadcast state saved to database: user_id={user_id}, channel_id={channel_id}, scene_id={scene_id}")
-        
-    except Exception as e:
-        print(f"Error setting broadcast state: {e}")
-        db.session.rollback()
+    """사용자 및 채널별 송출 씬 설정"""
+    state = get_user_broadcast_state(user_id, channel_id)
+    state['current_pushed_scene_id'] = scene_id
+    state['is_broadcasting'] = True if scene_id else False
 
 def get_user_room_name(user_id, channel_id=None):
     """사용자 및 채널별 WebSocket 룸 이름 생성"""
@@ -284,25 +243,6 @@ class Object(db.Model):
 
     def __repr__(self):
         return f'<Object {self.type}>'
-
-class BroadcastState(db.Model):
-    """사용자별 송출 상태를 데이터베이스에 저장하는 모델"""
-    __tablename__ = 'broadcast_states'
-    
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    channel_id = db.Column(db.String(50), nullable=False, default='default')
-    current_pushed_scene_id = db.Column(db.Integer, db.ForeignKey('scene.id'), nullable=True)
-    is_broadcasting = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    # Relationships
-    user = db.relationship('User', backref=db.backref('broadcast_states', lazy=True))
-    scene = db.relationship('Scene', backref=db.backref('broadcast_states', lazy=True))
-    
-    def __repr__(self):
-        return f'<BroadcastState user_id={self.user_id} channel_id={self.channel_id} scene_id={self.current_pushed_scene_id}>'
 
 # --- Helper Functions ---
 
@@ -654,7 +594,7 @@ def handle_connect():
     
     # 기본적으로 연결 허용 (인증은 join 이벤트에서 처리)
     print("WebSocket connection accepted")
-                return True
+    return True
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -942,7 +882,9 @@ def handle_user_project_detail(username, project_name):
         # URL의 username과 현재 사용자명이 일치하는지 확인
         if current_user.username != username:
             return jsonify({'error': 'Permission denied'}), 403
-    
+    finally:
+        pass   
+
     # 관리자 모드 확인
     admin_token = request.headers.get('X-Admin-Token')
     owner_id = request.headers.get('X-Owner-Id')
@@ -999,13 +941,6 @@ def handle_user_project_detail(username, project_name):
         db.session.delete(project)
         db.session.commit()
         return jsonify({'message': 'Project deleted successfully'})
-                
-    except Exception as e:
-        print(f"❌ Error in handle_user_project_detail: {str(e)}")
-        import traceback
-        print(traceback.format_exc())
-        db.session.rollback()
-        return jsonify({'error': f'Internal server error: {str(e)}'}), 500
 
 @app.route('/api/projects/<project_name>/share', methods=['POST'])
 @auth_required('owner')
@@ -2233,7 +2168,7 @@ def serve_project_image(project_name, filename):
             return jsonify({'error': 'Invalid user_id parameter'}), 400
     else:
         # 기존 방식 (하위 호환성)
-    project = Project.query.filter_by(name=project_name).first()
+        project = Project.query.filter_by(name=project_name).first()
     if not project:
         return jsonify({'error': 'Project not found'}), 404
     
@@ -2290,14 +2225,13 @@ def serve_project_thumbnail(project_name, filename):
             project_folder = get_project_folder(project_name, user_id)
         except (ValueError, TypeError):
             return jsonify({'error': 'Invalid user_id parameter'}), 400
-    else:
+        else:
         # 기존 방식 (하위 호환성)
-    project = Project.query.filter_by(name=project_name).first()
-    if not project:
-        return jsonify({'error': 'Project not found'}), 404
-    
-    # 프로젝트 소유자의 폴더 구조 사용
-    project_folder = get_project_folder(project_name, project.user_id)
+            project = Project.query.filter_by(name=project_name).first()
+        if not project:
+            return jsonify({'error': 'Project not found'}), 404
+        # 프로젝트 소유자의 폴더 구조 사용
+        project_folder = get_project_folder(project_name, project.user_id)
     
     thumbnails_path = os.path.join(project_folder, 'library', 'thumbnails')
     
@@ -2820,19 +2754,19 @@ def create_backup_data():
     db_backup = {}
     try:
         # 사용자 데이터
-            users = User.query.all()
+        users = User.query.all()
         db_backup['users'] = [user.to_dict() for user in users]
         
         # 프로젝트 데이터
-            projects = Project.query.all()
+        projects = Project.query.all()
         db_backup['projects'] = [project_to_dict(project) for project in projects]
         
         # 씬 데이터
-            scenes = Scene.query.all()
+        scenes = Scene.query.all()
         db_backup['scenes'] = [scene_to_dict(scene) for scene in scenes]
         
         # 객체 데이터
-            objects = Object.query.all()
+        objects = Object.query.all()
         db_backup['objects'] = [object_to_dict(obj) for obj in objects]
         
         # 프로젝트 권한 데이터
@@ -2848,7 +2782,6 @@ def create_backup_data():
             }
             for perm in permissions
         ]
-        
     except Exception as e:
         print(f"Database backup error: {e}")
         db_backup['error'] = str(e)
@@ -2895,8 +2828,8 @@ def create_backup_data():
         print(f"  - 총 썸네일: {total_thumbnails}개")
         print(f"  - 총 시퀀스 파일: {total_sequences}개")
         print(f"  - 총 크기: {total_size:,} bytes ({total_size / 1024 / 1024:.2f} MB)")
-            
-        except Exception as e:
+        
+    except Exception as e:
         print(f"Libraries info error: {e}")
         libraries_info['error'] = str(e)
         total_images = 0
