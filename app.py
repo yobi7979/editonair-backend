@@ -2047,7 +2047,7 @@ def serve_project_image(project_name, filename):
     if not project:
         return jsonify({'error': 'Project not found'}), 404
     
-    # 프로젝트 소유자의 폴더 구조 사용
+    # 프로젝트 소유자의 폴더 구조 사용 (사용자별 구조)
     project_folder = get_project_folder(project_name, project.user_id)
     images_path = os.path.join(project_folder, 'library', 'images')
     
