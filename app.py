@@ -2422,23 +2422,24 @@ def restore_database():
 @app.route('/api/admin/backup', methods=['POST'])
 @admin_required
 def backup_database():
-    """전체 시스템 백업 (데이터베이스 + 프로젝트 파일 + 라이브러리)"""
+    """전체 시스템 백업 (다운로드용 JSON 생성)"""
     try:
-        # Flask 앱 컨텍스트에서 백업 실행
         with app.app_context():
-            success = backup_all()
-        
-        if success:
-            return jsonify({
-                'success': True,
-                'message': '전체 시스템 백업이 성공적으로 완료되었습니다.',
-                'timestamp': datetime.now().isoformat()
-            }), 200
-        else:
-            return jsonify({
-                'success': False,
-                'message': '백업 중 오류가 발생했습니다.'
-            }), 500
+            # 백업 데이터 생성
+            backup_data = create_backup_data()
+            
+            # JSON 파일로 다운로드
+            from flask import make_response
+            import json
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f'editonair_backup_{timestamp}.json'
+            
+            response = make_response(json.dumps(backup_data, indent=2, ensure_ascii=False))
+            response.headers['Content-Type'] = 'application/json'
+            response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+            
+            return response
             
     except Exception as e:
         print(f"Backup error: {e}")
@@ -2446,6 +2447,69 @@ def backup_database():
             'success': False,
             'message': f'백업 중 오류가 발생했습니다: {str(e)}'
         }), 500
+
+def create_backup_data():
+    """백업 데이터 생성"""
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    
+    # 데이터베이스 백업
+    db_backup = {}
+    try:
+        # 사용자 데이터
+        users = User.query.all()
+        db_backup['users'] = [user.to_dict() for user in users]
+        
+        # 프로젝트 데이터
+        projects = Project.query.all()
+        db_backup['projects'] = [project_to_dict(project) for project in projects]
+        
+        # 씬 데이터
+        scenes = Scene.query.all()
+        db_backup['scenes'] = [scene_to_dict(scene) for scene in scenes]
+        
+        # 객체 데이터
+        objects = Object.query.all()
+        db_backup['objects'] = [object_to_dict(obj) for obj in objects]
+        
+        # 프로젝트 권한 데이터
+        permissions = ProjectPermission.query.all()
+        db_backup['permissions'] = [
+            {
+                'id': perm.id,
+                'project_id': perm.project_id,
+                'user_id': perm.user_id,
+                'permission_type': perm.permission_type,
+                'created_at': perm.created_at.isoformat() if perm.created_at else None,
+                'updated_at': perm.updated_at.isoformat() if perm.updated_at else None
+            }
+            for perm in permissions
+        ]
+        
+    except Exception as e:
+        print(f"Database backup error: {e}")
+        db_backup['error'] = str(e)
+    
+    # 라이브러리 정보
+    libraries_info = {}
+    try:
+        libraries_info = get_project_library_info()
+    except Exception as e:
+        print(f"Libraries info error: {e}")
+        libraries_info['error'] = str(e)
+    
+    # 백업 메타데이터
+    backup_metadata = {
+        'timestamp': timestamp,
+        'backup_date': datetime.now().isoformat(),
+        'version': '1.0',
+        'description': 'EditOnair 전체 시스템 백업'
+    }
+    
+    return {
+        'metadata': backup_metadata,
+        'database': db_backup,
+        'libraries_info': libraries_info
+    }
 
 @app.route('/api/admin/backups', methods=['GET'])
 @admin_required
