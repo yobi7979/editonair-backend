@@ -287,8 +287,12 @@ def get_current_user_from_token():
     """현재 인증된 사용자를 반환하는 헬퍼 함수"""
     try:
         current_user_id = get_jwt_identity()
-        return User.query.get(current_user_id)
-    except:
+        print(f"🔑 JWT Identity: {current_user_id}")
+        user = User.query.get(current_user_id)
+        print(f"🔑 User found: {user.username if user else 'None'}")
+        return user
+    except Exception as e:
+        print(f"❌ JWT validation error: {str(e)}")
         return None
 
 def get_project_by_name(project_name, user_id=None):
@@ -854,6 +858,30 @@ def handle_projects():
 def handle_project_detail(project_name):
     current_user = get_current_user_from_token()
     
+    # 디버깅 로그 추가
+    print(f"🔍 Project detail request - Project: {project_name}")
+    print(f"🔍 Current user: {current_user.username if current_user else 'None'}")
+    print(f"🔍 User ID: {current_user.id if current_user else 'None'}")
+    
+    # 관리자 모드 확인
+    admin_token = request.headers.get('X-Admin-Token')
+    owner_id = request.headers.get('X-Owner-Id')
+    is_admin_mode = False
+
+@app.route('/api/users/<username>/projects/<project_name>', methods=['GET', 'PUT', 'DELETE'])
+@auth_required('viewer')
+def handle_user_project_detail(username, project_name):
+    current_user = get_current_user_from_token()
+    
+    # 디버깅 로그 추가
+    print(f"🔍 User project detail request - User: {username}, Project: {project_name}")
+    print(f"🔍 Current user: {current_user.username if current_user else 'None'}")
+    print(f"🔍 User ID: {current_user.id if current_user else 'None'}")
+    
+    # URL의 username과 현재 사용자명이 일치하는지 확인
+    if current_user.username != username:
+        return jsonify({'error': 'Permission denied'}), 403
+    
     # 관리자 모드 확인
     admin_token = request.headers.get('X-Admin-Token')
     owner_id = request.headers.get('X-Owner-Id')
@@ -953,6 +981,35 @@ def handle_project_share(project_name):
 @app.route('/api/projects/<project_name>/scenes', methods=['POST'])
 @auth_required('editor')
 def create_scene(project_name):
+
+@app.route('/api/users/<username>/projects/<project_name>/scenes', methods=['POST'])
+@auth_required('editor')
+def create_user_scene(username, project_name):
+    current_user = get_current_user_from_token()
+    
+    # URL의 username과 현재 사용자명이 일치하는지 확인
+    if current_user.username != username:
+        return jsonify({'error': 'Permission denied'}), 403
+    
+    project = get_project_by_name(project_name, current_user.id)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+        
+    data = request.get_json()
+    if not data or 'name' not in data:
+        return jsonify({'error': 'Scene name is required'}), 400
+
+    # Determine order for the new scene
+    new_order = len(project.scenes)
+
+    new_scene = Scene(
+        name=data['name'],
+        order=new_order,
+        project_id=project.id
+    )
+    db.session.add(new_scene)
+    db.session.commit()
+    return jsonify(scene_to_dict(new_scene)), 201
     current_user = get_current_user_from_token()
     project = get_project_by_name(project_name, current_user.id)
     data = request.get_json()
