@@ -2494,21 +2494,51 @@ def backup_database():
                     project_dirs = [d for d in os.listdir(projects_dir) if os.path.isdir(os.path.join(projects_dir, d))]
                     total_projects = len(project_dirs)
                     
+                    # 전체 파일 수 미리 계산
+                    total_files = 0
+                    project_files_count = {}
+                    for project_dir in project_dirs:
+                        project_path = os.path.join(projects_dir, project_dir)
+                        library_path = os.path.join(project_path, 'library')
+                        if os.path.exists(library_path):
+                            file_count = sum(len(files) for _, _, files in os.walk(library_path))
+                            project_files_count[project_dir] = file_count
+                            total_files += file_count
+                    
+                    processed_files = 0
                     for i, project_dir in enumerate(project_dirs):
                         project_path = os.path.join(projects_dir, project_dir)
                         library_path = os.path.join(project_path, 'library')
                         
                         if os.path.exists(library_path):
-                            update_backup_progress(user_id, 'libraries', f'프로젝트 "{project_dir}" 라이브러리를 압축하고 있습니다... ({i+1}/{total_projects})', 50 + (i * 30 // total_projects))
+                            file_count = project_files_count.get(project_dir, 0)
+                            update_backup_progress(user_id, 'libraries', f'프로젝트 "{project_dir}" 라이브러리를 압축하고 있습니다... ({i+1}/{total_projects}, {file_count}개 파일)', 50 + (i * 30 // total_projects))
+                        else:
+                            update_backup_progress(user_id, 'libraries', f'프로젝트 "{project_dir}" 라이브러리 폴더가 없습니다. ({i+1}/{total_projects})', 50 + (i * 30 // total_projects))
+                            continue
                             
                             # 프로젝트별 라이브러리 폴더를 ZIP에 추가
+                            all_files = []
                             for root, dirs, files in os.walk(library_path):
                                 for file in files:
-                                    file_path = os.path.join(root, file)
-                                    # ZIP 내에서의 상대 경로
-                                    arcname = os.path.join(f'projects/{project_dir}', 
-                                                         os.path.relpath(file_path, project_path))
-                                    zipf.write(file_path, arcname)
+                                    all_files.append((root, file))
+                            
+                            for j, (root, file) in enumerate(all_files):
+                                file_path = os.path.join(root, file)
+                                # ZIP 내에서의 상대 경로 (library 폴더 기준)
+                                relative_path = os.path.relpath(file_path, library_path)
+                                arcname = os.path.join(f'projects/{project_dir}/library', relative_path)
+                                zipf.write(file_path, arcname)
+                                
+                                # 디버그 로그 (첫 번째 파일과 마지막 파일만)
+                                if j == 0 or j == len(all_files) - 1:
+                                    print(f"백업 파일 추가: {file_path} -> {arcname}")
+                                
+                                # 파일별 진행상황 업데이트 (10개 파일마다)
+                                processed_files += 1
+                                if (processed_files % 10 == 0) or (j == len(all_files) - 1):
+                                    progress_percent = 50 + (processed_files * 30 // total_files) if total_files > 0 else 80
+                                    update_backup_progress(user_id, 'libraries', f'전체 라이브러리 압축 중... ({processed_files}/{total_files} 파일)', progress_percent)
             
             update_backup_progress(user_id, 'complete', '백업 파일 생성이 완료되었습니다. 다운로드를 시작합니다...', 100)
             
@@ -2907,7 +2937,7 @@ def restore_libraries_from_zip(zipf, libraries_files):
             for file_type, files in project_files.items():
                 if file_type == 'images':
                     for file_info in files:
-                        zip_path = f'projects/{project_name}/{file_info["path"]}'
+                        zip_path = f'projects/{project_name}/library/{file_info["path"]}'
                         if zip_path in zipf.namelist():
                             target_path = os.path.join(project_dir, file_info["path"])
                             os.makedirs(os.path.dirname(target_path), exist_ok=True)
@@ -2916,7 +2946,7 @@ def restore_libraries_from_zip(zipf, libraries_files):
                 
                 elif file_type == 'thumbnails':
                     for file_info in files:
-                        zip_path = f'projects/{project_name}/{file_info["path"]}'
+                        zip_path = f'projects/{project_name}/library/{file_info["path"]}'
                         if zip_path in zipf.namelist():
                             target_path = os.path.join(project_dir, file_info["path"])
                             os.makedirs(os.path.dirname(target_path), exist_ok=True)
@@ -2926,7 +2956,7 @@ def restore_libraries_from_zip(zipf, libraries_files):
                 elif file_type == 'sequences':
                     for seq_info in files:
                         for file_info in seq_info['files']:
-                            zip_path = f'projects/{project_name}/{file_info["path"]}'
+                            zip_path = f'projects/{project_name}/library/{file_info["path"]}'
                             if zip_path in zipf.namelist():
                                 target_path = os.path.join(project_dir, file_info["path"])
                                 os.makedirs(os.path.dirname(target_path), exist_ok=True)
