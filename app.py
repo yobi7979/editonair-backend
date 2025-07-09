@@ -2501,43 +2501,52 @@ def backup_database():
                 print(f"🔍 백업 디버그: projects_dir exists = {os.path.exists(projects_dir)}")
                 
                 if os.path.exists(projects_dir):
-                    project_dirs = [d for d in os.listdir(projects_dir) if os.path.isdir(os.path.join(projects_dir, d))]
-                    print(f"🔍 백업 디버그: 발견된 프로젝트 디렉토리들 = {project_dirs}")
-                    total_projects = len(project_dirs)
+                    # 사용자별 폴더 순회
+                    all_projects = []
+                    for user_dir in os.listdir(projects_dir):
+                        user_path = os.path.join(projects_dir, user_dir)
+                        if os.path.isdir(user_path):
+                            for project_dir in os.listdir(user_path):
+                                project_path = os.path.join(user_path, project_dir)
+                                if os.path.isdir(project_path):
+                                    all_projects.append((user_dir, project_dir, project_path))
+                    
+                    print(f"🔍 백업 디버그: 발견된 프로젝트들 = {[(u, p) for u, p, _ in all_projects]}")
+                    total_projects = len(all_projects)
                     
                     # 전체 파일 수 미리 계산
                     total_files = 0
                     project_files_count = {}
-                    for project_dir in project_dirs:
-                        project_path = os.path.join(projects_dir, project_dir)
+                    for user_dir, project_dir, project_path in all_projects:
                         library_path = os.path.join(project_path, 'library')
-                        print(f"🔍 백업 디버그: 프로젝트 '{project_dir}' library_path = {library_path}")
+                        project_key = f"{user_dir}/{project_dir}"
+                        print(f"🔍 백업 디버그: 프로젝트 '{project_key}' library_path = {library_path}")
                         print(f"🔍 백업 디버그: library_path exists = {os.path.exists(library_path)}")
                         
                         if os.path.exists(library_path):
                             file_count = sum(len(files) for _, _, files in os.walk(library_path))
-                            project_files_count[project_dir] = file_count
+                            project_files_count[project_key] = file_count
                             total_files += file_count
-                            print(f"🔍 백업 디버그: 프로젝트 '{project_dir}' 파일 수 = {file_count}")
+                            print(f"🔍 백업 디버그: 프로젝트 '{project_key}' 파일 수 = {file_count}")
                             
                             # 실제 파일 목록 출력
-                            print(f"🔍 백업 디버그: 프로젝트 '{project_dir}' 파일 목록:")
+                            print(f"🔍 백업 디버그: 프로젝트 '{project_key}' 파일 목록:")
                             for root, dirs, files in os.walk(library_path):
                                 for file in files:
                                     file_path = os.path.join(root, file)
                                     relative_path = os.path.relpath(file_path, library_path)
                                     print(f"  - {relative_path} (전체 경로: {file_path})")
                         else:
-                            print(f"🔍 백업 디버그: 프로젝트 '{project_dir}' 라이브러리 폴더가 존재하지 않음")
+                            print(f"🔍 백업 디버그: 프로젝트 '{project_key}' 라이브러리 폴더가 존재하지 않음")
                     
                     processed_files = 0
-                    for i, project_dir in enumerate(project_dirs):
-                        project_path = os.path.join(projects_dir, project_dir)
+                    for i, (user_dir, project_dir, project_path) in enumerate(all_projects):
                         library_path = os.path.join(project_path, 'library')
+                        project_key = f"{user_dir}/{project_dir}"
                         
                         if os.path.exists(library_path):
-                            file_count = project_files_count.get(project_dir, 0)
-                            update_backup_progress(user_id, 'libraries', f'프로젝트 "{project_dir}" 라이브러리를 압축하고 있습니다... ({i+1}/{total_projects}, {file_count}개 파일)', 50 + (i * 30 // total_projects))
+                            file_count = project_files_count.get(project_key, 0)
+                            update_backup_progress(user_id, 'libraries', f'프로젝트 "{project_key}" 라이브러리를 압축하고 있습니다... ({i+1}/{total_projects}, {file_count}개 파일)', 50 + (i * 30 // total_projects))
                             
                             # 프로젝트별 라이브러리 폴더를 ZIP에 추가
                             all_files = []
@@ -2545,13 +2554,13 @@ def backup_database():
                                 for file in files:
                                     all_files.append((root, file))
                             
-                            print(f"🔍 백업 디버그: 프로젝트 '{project_dir}'에서 {len(all_files)}개 파일 발견")
+                            print(f"🔍 백업 디버그: 프로젝트 '{project_key}'에서 {len(all_files)}개 파일 발견")
                             
                             for j, (root, file) in enumerate(all_files):
                                 file_path = os.path.join(root, file)
                                 # ZIP 내에서의 상대 경로 (library 폴더 기준)
                                 relative_path = os.path.relpath(file_path, library_path)
-                                arcname = os.path.join(f'projects/{project_dir}/library', relative_path)
+                                arcname = os.path.join(f'projects/{user_dir}/{project_dir}/library', relative_path)
                                 
                                 try:
                                     zipf.write(file_path, arcname)
@@ -2565,7 +2574,7 @@ def backup_database():
                                     progress_percent = 50 + (processed_files * 30 // total_files) if total_files > 0 else 80
                                     update_backup_progress(user_id, 'libraries', f'전체 라이브러리 압축 중... ({processed_files}/{total_files} 파일)', progress_percent)
                         else:
-                            update_backup_progress(user_id, 'libraries', f'프로젝트 "{project_dir}" 라이브러리 폴더가 없습니다. ({i+1}/{total_projects})', 50 + (i * 30 // total_projects))
+                            update_backup_progress(user_id, 'libraries', f'프로젝트 "{project_key}" 라이브러리 폴더가 없습니다. ({i+1}/{total_projects})', 50 + (i * 30 // total_projects))
                             continue
             
             update_backup_progress(user_id, 'complete', '백업 파일 생성이 완료되었습니다. 다운로드를 시작합니다...', 100)
@@ -2709,7 +2718,7 @@ def create_backup_data():
     }
 
 def get_libraries_files_info():
-    """프로젝트별 라이브러리 파일 정보 수집 (개선된 버전)"""
+    """사용자별 프로젝트 라이브러리 파일 정보 수집 (개선된 버전)"""
     projects_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'projects')
     print(f"🔍 라이브러리 정보 수집: projects_dir = {projects_dir}")
     print(f"🔍 projects_dir exists = {os.path.exists(projects_dir)}")
@@ -2720,107 +2729,119 @@ def get_libraries_files_info():
     
     libraries_files = {}
     
-    for project_dir in os.listdir(projects_dir):
-        project_path = os.path.join(projects_dir, project_dir)
-        if not os.path.isdir(project_path):
+    # 사용자별 폴더 순회
+    for user_dir in os.listdir(projects_dir):
+        user_path = os.path.join(projects_dir, user_dir)
+        if not os.path.isdir(user_path):
             continue
             
-        print(f"🔍 프로젝트 처리 중: {project_dir}")
-        library_path = os.path.join(project_path, 'library')
+        print(f"🔍 사용자 폴더 처리 중: {user_dir}")
         
-        if not os.path.exists(library_path):
-            print(f"⚠️ 프로젝트 '{project_dir}'에 library 폴더가 없습니다.")
-            libraries_files[project_dir] = {
+        # 사용자별 프로젝트 폴더 순회
+        for project_dir in os.listdir(user_path):
+            project_path = os.path.join(user_path, project_dir)
+            if not os.path.isdir(project_path):
+                continue
+                
+            # 프로젝트 키: user_id/project_name 형태로 저장
+            project_key = f"{user_dir}/{project_dir}"
+            print(f"🔍 프로젝트 처리 중: {project_key}")
+            
+            library_path = os.path.join(project_path, 'library')
+            
+            if not os.path.exists(library_path):
+                print(f"⚠️ 프로젝트 '{project_key}'에 library 폴더가 없습니다.")
+                libraries_files[project_key] = {
+                    'images': [],
+                    'sequences': [],
+                    'thumbnails': []
+                }
+                continue
+            
+            project_files = {
                 'images': [],
                 'sequences': [],
                 'thumbnails': []
             }
-            continue
-        
-        project_files = {
-            'images': [],
-            'sequences': [],
-            'thumbnails': []
-        }
-        
-        # 이미지 파일 정보 수집
-        images_path = os.path.join(library_path, 'images')
-        if os.path.exists(images_path):
-            print(f"🔍 이미지 폴더 처리: {images_path}")
-            for file in os.listdir(images_path):
-                if file.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
-                    file_path = os.path.join(images_path, file)
-                    if os.path.isfile(file_path):
-                        file_size = os.path.getsize(file_path)
-                        project_files['images'].append({
-                            'filename': file,
-                            'size': file_size,
-                            'path': f'library/images/{file}'
-                        })
-                        print(f"  ✅ 이미지 파일: {file} ({file_size} bytes)")
-        else:
-            print(f"⚠️ 프로젝트 '{project_dir}'에 images 폴더가 없습니다.")
-        
-        # 썸네일 파일 정보 수집
-        thumbnails_path = os.path.join(library_path, 'thumbnails')
-        if os.path.exists(thumbnails_path):
-            print(f"🔍 썸네일 폴더 처리: {thumbnails_path}")
-            for file in os.listdir(thumbnails_path):
-                if file.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
-                    file_path = os.path.join(thumbnails_path, file)
-                    if os.path.isfile(file_path):
-                        file_size = os.path.getsize(file_path)
-                        project_files['thumbnails'].append({
-                            'filename': file,
-                            'size': file_size,
-                            'path': f'library/thumbnails/{file}'
-                        })
-                        print(f"  ✅ 썸네일 파일: {file} ({file_size} bytes)")
-        else:
-            print(f"⚠️ 프로젝트 '{project_dir}'에 thumbnails 폴더가 없습니다.")
-        
-        # 시퀀스 파일 정보 수집
-        sequences_path = os.path.join(library_path, 'sequences')
-        if os.path.exists(sequences_path):
-            print(f"🔍 시퀀스 폴더 처리: {sequences_path}")
-            for seq_dir in os.listdir(sequences_path):
-                seq_path = os.path.join(sequences_path, seq_dir)
-                if os.path.isdir(seq_path):
-                    print(f"  🔍 시퀀스 '{seq_dir}' 처리 중...")
-                    seq_files = []
-                    for root, dirs, files in os.walk(seq_path):
-                        for file in files:
-                            file_path = os.path.join(root, file)
-                            if os.path.isfile(file_path):
-                                rel_path = os.path.relpath(file_path, seq_path)
-                                file_size = os.path.getsize(file_path)
-                                seq_files.append({
-                                    'filename': file,
-                                    'path': f'library/sequences/{seq_dir}/{rel_path}',
-                                    'size': file_size
-                                })
-                                print(f"    ✅ 시퀀스 파일: {file} ({file_size} bytes)")
-                    
-                    if seq_files:
-                        project_files['sequences'].append({
-                            'sequence_name': seq_dir,
-                            'files': seq_files
-                        })
-                        print(f"  ✅ 시퀀스 '{seq_dir}' 완료: {len(seq_files)}개 파일")
-        else:
-            print(f"⚠️ 프로젝트 '{project_dir}'에 sequences 폴더가 없습니다.")
-        
-        # 프로젝트별 요약 정보 출력
-        total_images = len(project_files['images'])
-        total_thumbnails = len(project_files['thumbnails'])
-        total_sequences = sum(len(seq['files']) for seq in project_files['sequences'])
-        
-        print(f"📊 프로젝트 '{project_dir}' 요약:")
-        print(f"  - 이미지: {total_images}개")
-        print(f"  - 썸네일: {total_thumbnails}개")
-        print(f"  - 시퀀스 파일: {total_sequences}개")
-        
-        libraries_files[project_dir] = project_files
+            
+            # 이미지 파일 정보 수집
+            images_path = os.path.join(library_path, 'images')
+            if os.path.exists(images_path):
+                print(f"🔍 이미지 폴더 처리: {images_path}")
+                for file in os.listdir(images_path):
+                    if file.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
+                        file_path = os.path.join(images_path, file)
+                        if os.path.isfile(file_path):
+                            file_size = os.path.getsize(file_path)
+                            project_files['images'].append({
+                                'filename': file,
+                                'size': file_size,
+                                'path': f'library/images/{file}'
+                            })
+                            print(f"  ✅ 이미지 파일: {file} ({file_size} bytes)")
+            else:
+                print(f"⚠️ 프로젝트 '{project_key}'에 images 폴더가 없습니다.")
+            
+            # 썸네일 파일 정보 수집
+            thumbnails_path = os.path.join(library_path, 'thumbnails')
+            if os.path.exists(thumbnails_path):
+                print(f"🔍 썸네일 폴더 처리: {thumbnails_path}")
+                for file in os.listdir(thumbnails_path):
+                    if file.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
+                        file_path = os.path.join(thumbnails_path, file)
+                        if os.path.isfile(file_path):
+                            file_size = os.path.getsize(file_path)
+                            project_files['thumbnails'].append({
+                                'filename': file,
+                                'size': file_size,
+                                'path': f'library/thumbnails/{file}'
+                            })
+                            print(f"  ✅ 썸네일 파일: {file} ({file_size} bytes)")
+            else:
+                print(f"⚠️ 프로젝트 '{project_key}'에 thumbnails 폴더가 없습니다.")
+            
+            # 시퀀스 파일 정보 수집
+            sequences_path = os.path.join(library_path, 'sequences')
+            if os.path.exists(sequences_path):
+                print(f"🔍 시퀀스 폴더 처리: {sequences_path}")
+                for seq_dir in os.listdir(sequences_path):
+                    seq_path = os.path.join(sequences_path, seq_dir)
+                    if os.path.isdir(seq_path):
+                        print(f"  🔍 시퀀스 '{seq_dir}' 처리 중...")
+                        seq_files = []
+                        for root, dirs, files in os.walk(seq_path):
+                            for file in files:
+                                file_path = os.path.join(root, file)
+                                if os.path.isfile(file_path):
+                                    rel_path = os.path.relpath(file_path, seq_path)
+                                    file_size = os.path.getsize(file_path)
+                                    seq_files.append({
+                                        'filename': file,
+                                        'path': f'library/sequences/{seq_dir}/{rel_path}',
+                                        'size': file_size
+                                    })
+                                    print(f"    ✅ 시퀀스 파일: {file} ({file_size} bytes)")
+                        
+                        if seq_files:
+                            project_files['sequences'].append({
+                                'sequence_name': seq_dir,
+                                'files': seq_files
+                            })
+                            print(f"  ✅ 시퀀스 '{seq_dir}' 완료: {len(seq_files)}개 파일")
+            else:
+                print(f"⚠️ 프로젝트 '{project_key}'에 sequences 폴더가 없습니다.")
+            
+            # 프로젝트별 요약 정보 출력
+            total_images = len(project_files['images'])
+            total_thumbnails = len(project_files['thumbnails'])
+            total_sequences = sum(len(seq['files']) for seq in project_files['sequences'])
+            
+            print(f"📊 프로젝트 '{project_key}' 요약:")
+            print(f"  - 이미지: {total_images}개")
+            print(f"  - 썸네일: {total_thumbnails}개")
+            print(f"  - 시퀀스 파일: {total_sequences}개")
+            
+            libraries_files[project_key] = project_files
     
     return libraries_files
 
@@ -3040,34 +3061,42 @@ def restore_database_from_backup(db_data):
         return False
 
 def restore_libraries_from_zip(zipf, libraries_files):
-    """ZIP 파일에서 라이브러리 복구"""
+    """ZIP 파일에서 라이브러리 복구 (사용자별 구조)"""
     try:
         user_id = get_jwt_identity()
         projects_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'projects')
         
         total_projects = len(libraries_files)
-        for i, (project_name, project_files) in enumerate(libraries_files.items()):
-            update_restore_progress(user_id, 'libraries', f'프로젝트 "{project_name}" 라이브러리를 복구하고 있습니다... ({i+1}/{total_projects})', 70 + (i * 15 // total_projects))
+        for i, (project_key, project_files) in enumerate(libraries_files.items()):
+            update_restore_progress(user_id, 'libraries', f'프로젝트 "{project_key}" 라이브러리를 복구하고 있습니다... ({i+1}/{total_projects})', 70 + (i * 15 // total_projects))
             
-            project_dir = os.path.join(projects_dir, project_name)
-            os.makedirs(project_dir, exist_ok=True)
+            # project_key는 "user_id/project_name" 형태
+            if '/' in project_key:
+                user_dir, project_name = project_key.split('/', 1)
+            else:
+                # 하위 호환성을 위해 기존 방식 지원
+                user_dir = 'default'
+                project_name = project_key
+            
+            user_project_dir = os.path.join(projects_dir, user_dir, project_name)
+            os.makedirs(user_project_dir, exist_ok=True)
             
             # 프로젝트별 파일 복구
             for file_type, files in project_files.items():
                 if file_type == 'images':
                     for file_info in files:
-                        zip_path = f'projects/{project_name}/library/{file_info["path"]}'
+                        zip_path = f'projects/{user_dir}/{project_name}/library/{file_info["path"]}'
                         if zip_path in zipf.namelist():
-                            target_path = os.path.join(project_dir, file_info["path"])
+                            target_path = os.path.join(user_project_dir, file_info["path"])
                             os.makedirs(os.path.dirname(target_path), exist_ok=True)
                             with zipf.open(zip_path) as source, open(target_path, 'wb') as target:
                                 shutil.copyfileobj(source, target)
                 
                 elif file_type == 'thumbnails':
                     for file_info in files:
-                        zip_path = f'projects/{project_name}/library/{file_info["path"]}'
+                        zip_path = f'projects/{user_dir}/{project_name}/library/{file_info["path"]}'
                         if zip_path in zipf.namelist():
-                            target_path = os.path.join(project_dir, file_info["path"])
+                            target_path = os.path.join(user_project_dir, file_info["path"])
                             os.makedirs(os.path.dirname(target_path), exist_ok=True)
                             with zipf.open(zip_path) as source, open(target_path, 'wb') as target:
                                 shutil.copyfileobj(source, target)
@@ -3075,9 +3104,9 @@ def restore_libraries_from_zip(zipf, libraries_files):
                 elif file_type == 'sequences':
                     for seq_info in files:
                         for file_info in seq_info['files']:
-                            zip_path = f'projects/{project_name}/library/{file_info["path"]}'
+                            zip_path = f'projects/{user_dir}/{project_name}/library/{file_info["path"]}'
                             if zip_path in zipf.namelist():
-                                target_path = os.path.join(project_dir, file_info["path"])
+                                target_path = os.path.join(user_project_dir, file_info["path"])
                                 os.makedirs(os.path.dirname(target_path), exist_ok=True)
                                 with zipf.open(zip_path) as source, open(target_path, 'wb') as target:
                                     shutil.copyfileobj(source, target)
