@@ -101,29 +101,70 @@ backup_progress = {}
 restore_progress = {}
 
 def get_user_broadcast_state(user_id, channel_id=None):
-    """사용자 및 채널별 송출 상태 가져오기"""
+    """사용자 및 채널별 송출 상태 가져오기 (데이터베이스 기반)"""
     # channel_id가 없으면 기본 채널 사용
     if channel_id is None:
         channel_id = 'default'
     
-    # 사용자별 상태 초기화
-    if user_id not in user_broadcast_state:
-        user_broadcast_state[user_id] = {}
-    
-    # 채널별 상태 초기화
-    if channel_id not in user_broadcast_state[user_id]:
-        user_broadcast_state[user_id][channel_id] = {
+    try:
+        # 데이터베이스에서 송출 상태 조회
+        broadcast_state = BroadcastState.query.filter_by(
+            user_id=user_id, 
+            channel_id=channel_id
+        ).first()
+        
+        if broadcast_state:
+            return {
+                'current_pushed_scene_id': broadcast_state.current_pushed_scene_id,
+                'is_broadcasting': broadcast_state.is_broadcasting
+            }
+        else:
+            # 상태가 없으면 기본값 반환
+            return {
+                'current_pushed_scene_id': None,
+                'is_broadcasting': False
+            }
+    except Exception as e:
+        print(f"Error getting broadcast state: {e}")
+        return {
             'current_pushed_scene_id': None,
             'is_broadcasting': False
         }
-    
-    return user_broadcast_state[user_id][channel_id]
 
 def set_user_pushed_scene(user_id, scene_id, channel_id=None):
-    """사용자 및 채널별 송출 씬 설정"""
-    state = get_user_broadcast_state(user_id, channel_id)
-    state['current_pushed_scene_id'] = scene_id
-    state['is_broadcasting'] = True if scene_id else False
+    """사용자 및 채널별 송출 씬 설정 (데이터베이스 기반)"""
+    # channel_id가 없으면 기본 채널 사용
+    if channel_id is None:
+        channel_id = 'default'
+    
+    try:
+        # 기존 송출 상태 조회 또는 생성
+        broadcast_state = BroadcastState.query.filter_by(
+            user_id=user_id, 
+            channel_id=channel_id
+        ).first()
+        
+        if broadcast_state:
+            # 기존 상태 업데이트
+            broadcast_state.current_pushed_scene_id = scene_id
+            broadcast_state.is_broadcasting = True if scene_id else False
+            broadcast_state.updated_at = datetime.utcnow()
+        else:
+            # 새로운 상태 생성
+            broadcast_state = BroadcastState(
+                user_id=user_id,
+                channel_id=channel_id,
+                current_pushed_scene_id=scene_id,
+                is_broadcasting=True if scene_id else False
+            )
+            db.session.add(broadcast_state)
+        
+        db.session.commit()
+        print(f"Broadcast state saved to database: user_id={user_id}, channel_id={channel_id}, scene_id={scene_id}")
+        
+    except Exception as e:
+        print(f"Error setting broadcast state: {e}")
+        db.session.rollback()
 
 def get_user_room_name(user_id, channel_id=None):
     """사용자 및 채널별 WebSocket 룸 이름 생성"""
@@ -243,6 +284,25 @@ class Object(db.Model):
 
     def __repr__(self):
         return f'<Object {self.type}>'
+
+class BroadcastState(db.Model):
+    """사용자별 송출 상태를 데이터베이스에 저장하는 모델"""
+    __tablename__ = 'broadcast_states'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    channel_id = db.Column(db.String(50), nullable=False, default='default')
+    current_pushed_scene_id = db.Column(db.Integer, db.ForeignKey('scene.id'), nullable=True)
+    is_broadcasting = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    user = db.relationship('User', backref=db.backref('broadcast_states', lazy=True))
+    scene = db.relationship('Scene', backref=db.backref('broadcast_states', lazy=True))
+    
+    def __repr__(self):
+        return f'<BroadcastState user_id={self.user_id} channel_id={self.channel_id} scene_id={self.current_pushed_scene_id}>'
 
 # --- Helper Functions ---
 
