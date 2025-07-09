@@ -6,7 +6,8 @@
 """
 
 import time
-from typing import Dict, Any, Optional
+import threading
+from typing import Dict, Any, Optional, Callable
 from datetime import datetime
 
 class LiveStateManager:
@@ -20,8 +21,73 @@ class LiveStateManager:
         self.scene_states: Dict[str, Dict[int, Dict[str, Any]]] = {}
         
         # 타이머 상태 저장
-        # 구조: {object_id: {is_running: bool, start_time: timestamp, elapsed: float}}
+        # 구조: {object_id: {is_running: bool, start_time: timestamp, elapsed: float, project_name: str, time_format: str}}
         self.timer_states: Dict[int, Dict[str, Any]] = {}
+        
+        # 타이머 업데이트 스레드
+        self.timer_update_thread = None
+        self.timer_update_running = False
+        
+        # WebSocket 업데이트 콜백 함수
+        self.websocket_update_callback = None
+        
+        # 타이머 업데이트 시작
+        self.start_timer_updates()
+    
+    def set_websocket_callback(self, callback: Callable):
+        """WebSocket 업데이트 콜백 함수 설정"""
+        self.websocket_update_callback = callback
+    
+    def start_timer_updates(self):
+        """타이머 업데이트 스레드 시작"""
+        if self.timer_update_thread is None or not self.timer_update_thread.is_alive():
+            self.timer_update_running = True
+            self.timer_update_thread = threading.Thread(target=self._timer_update_loop, daemon=True)
+            self.timer_update_thread.start()
+    
+    def stop_timer_updates(self):
+        """타이머 업데이트 스레드 정지"""
+        self.timer_update_running = False
+        if self.timer_update_thread and self.timer_update_thread.is_alive():
+            self.timer_update_thread.join(timeout=1)
+    
+    def _timer_update_loop(self):
+        """타이머 업데이트 루프"""
+        while self.timer_update_running:
+            try:
+                # 실행 중인 타이머들 업데이트
+                running_timers = {obj_id: state for obj_id, state in self.timer_states.items() 
+                                if state.get('is_running', False)}
+                
+                if running_timers and self.websocket_update_callback:
+                    for obj_id, timer_state in running_timers.items():
+                        project_name = timer_state.get('project_name')
+                        time_format = timer_state.get('time_format', 'MM:SS')
+                        
+                        if project_name:
+                            # 타이머 상태 업데이트
+                            updated_state = self.get_timer_state(obj_id, time_format)
+                            
+                            # 라이브 상태 업데이트
+                            self.update_object_property(project_name, obj_id, 'content', updated_state['current_time'])
+                            
+                            # WebSocket으로 실시간 업데이트 전송
+                            timer_update_data = {
+                                'object_id': obj_id,
+                                'action': 'update',
+                                'timer_state': updated_state,
+                                'timestamp': datetime.now().isoformat()
+                            }
+                            
+                            # 콜백 함수를 통해 WebSocket 업데이트 전송
+                            self.websocket_update_callback(timer_update_data, project_name)
+                
+                # 1초마다 업데이트
+                time.sleep(1)
+                
+            except Exception as e:
+                print(f"타이머 업데이트 루프 오류: {e}")
+                time.sleep(1)
     
     def get_project_live_state(self, project_name: str) -> Dict[int, Dict[str, Any]]:
         """프로젝트의 모든 라이브 상태 반환"""
@@ -86,7 +152,7 @@ class LiveStateManager:
         return {scene_id: state['is_live'] for scene_id, state in project_scenes.items()}
     
     # 타이머 상태 관리
-    def start_timer(self, object_id: int):
+    def start_timer(self, object_id: int, project_name: str = None, time_format: str = 'MM:SS'):
         """타이머 시작"""
         current_time = time.time()
         if object_id in self.timer_states:
@@ -98,7 +164,9 @@ class LiveStateManager:
         self.timer_states[object_id] = {
             'is_running': True,
             'start_time': current_time,
-            'elapsed': elapsed
+            'elapsed': elapsed,
+            'project_name': project_name,
+            'time_format': time_format
         }
     
     def stop_timer(self, object_id: int):
@@ -109,18 +177,32 @@ class LiveStateManager:
             elapsed = self.timer_states[object_id]['elapsed']
             
             self.timer_states[object_id] = {
+                **self.timer_states[object_id],
                 'is_running': False,
-                'start_time': start_time,
                 'elapsed': elapsed + (current_time - start_time)
             }
     
     def reset_timer(self, object_id: int):
         """타이머 리셋"""
-        self.timer_states[object_id] = {
-            'is_running': False,
-            'start_time': 0,
-            'elapsed': 0
-        }
+        if object_id in self.timer_states:
+            project_name = self.timer_states[object_id].get('project_name')
+            time_format = self.timer_states[object_id].get('time_format', 'MM:SS')
+            
+            self.timer_states[object_id] = {
+                'is_running': False,
+                'start_time': 0,
+                'elapsed': 0,
+                'project_name': project_name,
+                'time_format': time_format
+            }
+        else:
+            self.timer_states[object_id] = {
+                'is_running': False,
+                'start_time': 0,
+                'elapsed': 0,
+                'project_name': None,
+                'time_format': 'MM:SS'
+            }
     
     def get_timer_state(self, object_id: int, time_format: str = 'MM:SS') -> Dict[str, Any]:
         """타이머 상태 반환"""

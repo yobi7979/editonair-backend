@@ -3618,7 +3618,7 @@ def control_timer(object_id, action):
         
         # 타이머 제어
         if action == 'start':
-            live_state_manager.start_timer(object_id)
+            live_state_manager.start_timer(object_id, project_name, time_format)
         elif action == 'stop':
             live_state_manager.stop_timer(object_id)
         elif action == 'reset':
@@ -3836,6 +3836,26 @@ def update_shape_live(object_id):
         return jsonify({'error': str(e)}), 500
 
 # --- Main Entry Point ---
+
+# WebSocket 업데이트 콜백 함수 설정
+def websocket_timer_update_callback(timer_update_data, project_name):
+    """타이머 업데이트를 WebSocket으로 전송하는 콜백 함수"""
+    try:
+        # 프로젝트 룸으로 전송
+        socketio.emit('timer_update', timer_update_data, room=f'project_{project_name}')
+        
+        # 오버레이 페이지를 위해 모든 사용자의 개별 룸으로도 전송
+        project = get_project_by_name(project_name)
+        if project:
+            permissions = ProjectPermission.query.filter_by(project_id=project.id).all()
+            for permission in permissions:
+                user_room = f'user_{permission.user_id}'
+                socketio.emit('timer_update', timer_update_data, room=user_room)
+    except Exception as e:
+        print(f"타이머 업데이트 WebSocket 전송 오류: {e}")
+
+# 라이브 상태 관리자에 콜백 함수 설정
+live_state_manager.set_websocket_callback(websocket_timer_update_callback)
 
 if __name__ == '__main__':
     with app.app_context():
