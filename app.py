@@ -70,7 +70,17 @@ try:
     # Initialize extensions
     db = SQLAlchemy(app)
     jwt = JWTManager(app)
-    socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent', allow_unsafe_werkzeug=True)
+    
+    # WebSocket 설정 개선 - Railway 환경 호환성
+    socketio = SocketIO(
+        app, 
+        cors_allowed_origins="*", 
+        async_mode='threading',  # gevent 대신 threading 사용
+        allow_unsafe_werkzeug=True,
+        ping_timeout=60,
+        ping_interval=25,
+        max_http_buffer_size=1e8
+    )
 
     print("Database and extensions initialized successfully")
 
@@ -131,9 +141,13 @@ def update_backup_progress(user_id, step, message, percentage=None):
         'timestamp': datetime.now().isoformat()
     }
     
-    # WebSocket으로 진행상황 전송
-    user_room = f'user_{user_id}'
-    socketio.emit('backup_progress', backup_progress[user_id], room=user_room)
+    # WebSocket으로 진행상황 전송 (연결된 경우에만)
+    try:
+        user_room = f'user_{user_id}'
+        socketio.emit('backup_progress', backup_progress[user_id], room=user_room)
+    except Exception as e:
+        print(f"WebSocket 전송 실패 (백업): {e}")
+        # WebSocket 실패해도 진행상황은 메모리에 저장됨
 
 def update_restore_progress(user_id, step, message, percentage=None):
     """복구 진행상황 업데이트"""
@@ -147,9 +161,13 @@ def update_restore_progress(user_id, step, message, percentage=None):
         'timestamp': datetime.now().isoformat()
     }
     
-    # WebSocket으로 진행상황 전송
-    user_room = f'user_{user_id}'
-    socketio.emit('restore_progress', restore_progress[user_id], room=user_room)
+    # WebSocket으로 진행상황 전송 (연결된 경우에만)
+    try:
+        user_room = f'user_{user_id}'
+        socketio.emit('restore_progress', restore_progress[user_id], room=user_room)
+    except Exception as e:
+        print(f"WebSocket 전송 실패 (복구): {e}")
+        # WebSocket 실패해도 진행상황은 메모리에 저장됨
 
 # --- Database Models ---
 
@@ -3034,6 +3052,54 @@ def get_libraries_info():
         return jsonify({
             'success': False,
             'message': f'라이브러리 정보 조회 중 오류가 발생했습니다: {str(e)}'
+        }), 500
+
+@app.route('/api/admin/backup/progress', methods=['GET'])
+@admin_required
+def get_backup_progress():
+    """백업 진행상황 조회 (폴링용)"""
+    try:
+        current_user = get_current_user_from_token()
+        user_id = current_user.id
+        
+        if user_id in backup_progress:
+            return jsonify({
+                'success': True,
+                'data': backup_progress[user_id]
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'data': None
+            })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/admin/restore/progress', methods=['GET'])
+@admin_required
+def get_restore_progress():
+    """복구 진행상황 조회 (폴링용)"""
+    try:
+        current_user = get_current_user_from_token()
+        user_id = current_user.id
+        
+        if user_id in restore_progress:
+            return jsonify({
+                'success': True,
+                'data': restore_progress[user_id]
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'data': None
+            })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
         }), 500
 
 # --- 라이브 컨트롤 API ---
