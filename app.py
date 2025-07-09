@@ -2424,8 +2424,9 @@ def restore_database():
 def backup_database():
     """전체 시스템 백업 (데이터베이스 + 프로젝트 파일 + 라이브러리)"""
     try:
-        # 백업 실행
-        success = backup_all()
+        # Flask 앱 컨텍스트에서 백업 실행
+        with app.app_context():
+            success = backup_all()
         
         if success:
             return jsonify({
@@ -2451,7 +2452,8 @@ def backup_database():
 def get_backup_list():
     """백업 목록 조회"""
     try:
-        backups = list_backups()
+        with app.app_context():
+            backups = list_backups()
         return jsonify({
             'success': True,
             'backups': backups
@@ -2508,7 +2510,8 @@ def restore_backup(timestamp):
 def get_libraries_info():
     """프로젝트별 라이브러리 정보 조회"""
     try:
-        libraries_info = get_project_library_info()
+        with app.app_context():
+            libraries_info = get_project_library_info()
         return jsonify({
             'success': True,
             'libraries_info': libraries_info

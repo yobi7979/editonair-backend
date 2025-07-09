@@ -17,39 +17,105 @@ def get_database_url():
     return db_url
 
 def backup_postgres_db(backup_dir, timestamp):
-    """PostgreSQL 데이터베이스 백업"""
-    db_url = get_database_url()
-    parsed = urlparse(db_url)
-    
-    # 데이터베이스 접속 정보
-    db_name = parsed.path[1:]  # 맨 앞의 / 제거
-    db_user = parsed.username
-    db_host = parsed.hostname
-    db_port = parsed.port or 5432
-    
-    # 백업 파일 경로
-    backup_file = os.path.join(backup_dir, f'database_{timestamp}.sql')
-    
+    """PostgreSQL 데이터베이스 백업 (SQLAlchemy 기반)"""
     try:
-        # pg_dump 명령 실행
-        env = os.environ.copy()
-        if parsed.password:
-            env['PGPASSWORD'] = parsed.password
-            
-        cmd = [
-            'pg_dump',
-            '-h', db_host,
-            '-p', str(db_port),
-            '-U', db_user,
-            '-F', 'p',  # 일반 텍스트 형식
-            '-f', backup_file,
-            db_name
-        ]
+        # 백업 파일 경로
+        backup_file = os.path.join(backup_dir, f'database_{timestamp}.sql')
         
-        subprocess.run(cmd, env=env, check=True)
-        print(f'PostgreSQL database backed up to: {backup_file}')
-        return True
-    except subprocess.CalledProcessError as e:
+        # Flask 앱 컨텍스트가 있는지 확인
+        try:
+            from flask import current_app
+            app_context = current_app.app_context()
+        except RuntimeError:
+            # Flask 앱 컨텍스트가 없으면 직접 import
+            import sys
+            import os
+            sys.path.append(os.path.dirname(__file__))
+            from app import app, db, User, Project, Scene, Object, ProjectPermission
+            app_context = app.app_context()
+        
+        with app_context:
+            backup_content = []
+            backup_content.append("-- EditOnair Database Backup")
+            backup_content.append(f"-- Generated: {datetime.now().isoformat()}")
+            backup_content.append("-- ")
+            backup_content.append("")
+            
+            try:
+                # 사용자 테이블 백업
+                users = User.query.all()
+                if users:
+                    backup_content.append("-- User Table")
+                    backup_content.append("DELETE FROM \"user\" WHERE id IN (SELECT id FROM \"user\");")
+                    for user in users:
+                        created_at = user.created_at.isoformat() if user.created_at else 'NULL'
+                        backup_content.append(f"INSERT INTO \"user\" (id, username, password, created_at, is_active) VALUES ({user.id}, '{user.username}', '{user.password}', '{created_at}', {user.is_active});")
+                    backup_content.append("")
+                
+                # 프로젝트 테이블 백업
+                projects = Project.query.all()
+                if projects:
+                    backup_content.append("-- Project Table")
+                    backup_content.append("DELETE FROM project WHERE id IN (SELECT id FROM project);")
+                    for project in projects:
+                        created_at = project.created_at.isoformat() if project.created_at else 'NULL'
+                        updated_at = project.updated_at.isoformat() if project.updated_at else 'NULL'
+                        backup_content.append(f"INSERT INTO project (id, name, created_at, updated_at, user_id) VALUES ({project.id}, '{project.name}', '{created_at}', '{updated_at}', {project.user_id});")
+                    backup_content.append("")
+                
+                # 씬 테이블 백업
+                scenes = Scene.query.all()
+                if scenes:
+                    backup_content.append("-- Scene Table")
+                    backup_content.append("DELETE FROM scene WHERE id IN (SELECT id FROM scene);")
+                    for scene in scenes:
+                        created_at = scene.created_at.isoformat() if scene.created_at else 'NULL'
+                        updated_at = scene.updated_at.isoformat() if scene.updated_at else 'NULL'
+                        backup_content.append(f"INSERT INTO scene (id, project_id, name, \"order\", duration, created_at, updated_at) VALUES ({scene.id}, {scene.project_id}, '{scene.name}', {scene.order}, {scene.duration}, '{created_at}', '{updated_at}');")
+                    backup_content.append("")
+                
+                # 객체 테이블 백업
+                objects = Object.query.all()
+                if objects:
+                    backup_content.append("-- Objects Table")
+                    backup_content.append("DELETE FROM objects WHERE id IN (SELECT id FROM objects);")
+                    for obj in objects:
+                        # JSON 문자열을 이스케이프
+                        properties = obj.properties.replace("'", "''") if obj.properties else ''
+                        in_motion = obj.in_motion.replace("'", "''") if obj.in_motion else ''
+                        out_motion = obj.out_motion.replace("'", "''") if obj.out_motion else ''
+                        timing = obj.timing.replace("'", "''") if obj.timing else ''
+                        
+                        created_at = obj.created_at.isoformat() if obj.created_at else 'NULL'
+                        updated_at = obj.updated_at.isoformat() if obj.updated_at else 'NULL'
+                        
+                        backup_content.append(f"INSERT INTO objects (id, name, type, \"order\", properties, in_motion, out_motion, timing, scene_id, created_at, updated_at) VALUES ({obj.id}, '{obj.name}', '{obj.type}', {obj.order}, '{properties}', '{in_motion}', '{out_motion}', '{timing}', {obj.scene_id}, '{created_at}', '{updated_at}');")
+                    backup_content.append("")
+                
+                # 프로젝트 권한 테이블 백업
+                permissions = ProjectPermission.query.all()
+                if permissions:
+                    backup_content.append("-- Project Permission Table")
+                    backup_content.append("DELETE FROM project_permission WHERE id IN (SELECT id FROM project_permission);")
+                    for perm in permissions:
+                        created_at = perm.created_at.isoformat() if perm.created_at else 'NULL'
+                        updated_at = perm.updated_at.isoformat() if perm.updated_at else 'NULL'
+                        backup_content.append(f"INSERT INTO project_permission (id, project_id, user_id, permission_type, created_at, updated_at) VALUES ({perm.id}, {perm.project_id}, {perm.user_id}, '{perm.permission_type}', '{created_at}', '{updated_at}');")
+                    backup_content.append("")
+                
+                # 백업 내용을 파일에 저장
+                backup_sql = "\n".join(backup_content)
+                with open(backup_file, 'w', encoding='utf-8') as f:
+                    f.write(backup_sql)
+                
+                print(f'PostgreSQL database backed up to: {backup_file}')
+                return True
+                
+            except Exception as e:
+                print(f'Error creating backup content: {e}')
+                return False
+                
+    except Exception as e:
         print(f'Error backing up PostgreSQL database: {e}')
         return False
 
