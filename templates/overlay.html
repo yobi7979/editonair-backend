@@ -501,9 +501,14 @@
         console.log('No initial scene provided');
         {% endif %}
 
-        // 백그라운드 프리로딩 함수
-        async function preloadProjectImages() {
-            console.log('🔄 백그라운드 이미지 프리로딩 시작...');
+        // 프리로딩 상태 추적
+        const preloadedImages = new Set();
+        let isPreloadingComplete = false;
+        let totalImagesToPreload = 0;
+        
+        // 즉시 프리로딩 함수 (페이지 로드와 동시에 시작)
+        async function immediatePreloadAllImages() {
+            console.log('🚀 즉시 모든 이미지 프리로딩 시작...');
             
             try {
                 // 프로젝트의 모든 씬 정보 가져오기
@@ -512,62 +517,84 @@
                 
                 if (!project.scenes) {
                     console.log('📷 프리로딩할 씬이 없음');
+                    isPreloadingComplete = true;
                     return;
                 }
                 
-                const allImageObjects = [];
+                // 모든 이미지 URL 수집 (중복 제거)
+                const allImageUrls = new Set();
                 project.scenes.forEach(scene => {
                     const imageObjs = scene.objects.filter(obj => obj.type === 'image');
-                    allImageObjects.push(...imageObjs);
+                    imageObjs.forEach(obj => {
+                        if (obj.properties.src) {
+                            allImageUrls.add(obj.properties.src);
+                        }
+                    });
                 });
                 
-                if (allImageObjects.length === 0) {
+                if (allImageUrls.size === 0) {
                     console.log('📷 프리로딩할 이미지가 없음');
+                    isPreloadingComplete = true;
                     return;
                 }
                 
-                console.log(`📷 백그라운드에서 ${allImageObjects.length}개 이미지 프리로딩 시작`);
+                totalImagesToPreload = allImageUrls.size;
+                console.log(`📷 총 ${totalImagesToPreload}개의 고유 이미지 즉시 프리로딩 시작`);
                 
-                // 순차적으로 프리로딩 (서버 부하 방지)
-                for (let i = 0; i < allImageObjects.length; i++) {
-                    const obj = allImageObjects[i];
-                    try {
+                // 병렬로 프리로딩 (빠른 캐싱을 위해)
+                const preloadPromises = Array.from(allImageUrls).map((imageUrl, index) => {
+                    return new Promise((resolve) => {
                         const img = new Image();
-                        await new Promise((resolve) => {
-                            const timeout = setTimeout(() => {
-                                console.warn(`⏰ 백그라운드 이미지 프리로딩 타임아웃: ${obj.properties.src}`);
-                                resolve();
-                            }, 1000); // 백그라운드는 1초 타임아웃
-                            
-                            img.onload = () => {
-                                clearTimeout(timeout);
-                                console.log(`✅ 백그라운드 이미지 프리로딩 완료 (${i + 1}/${allImageObjects.length}): ${obj.properties.src}`);
-                                resolve();
-                            };
-                            
-                            img.onerror = () => {
-                                clearTimeout(timeout);
-                                console.warn(`❌ 백그라운드 이미지 프리로딩 실패: ${obj.properties.src}`);
-                                resolve();
-                            };
-                            
-                            img.src = obj.properties.src;
-                        });
                         
-                        // 다음 이미지 로딩 전 잠시 대기 (서버 부하 방지)
-                        if (i < allImageObjects.length - 1) {
-                            await new Promise(resolve => setTimeout(resolve, 100));
-                        }
-                    } catch (error) {
-                        console.warn(`❌ 백그라운드 이미지 프리로딩 오류: ${obj.properties.src}`, error);
-                    }
-                }
+                        const timeout = setTimeout(() => {
+                            console.warn(`⏰ 이미지 프리로딩 타임아웃 (${index + 1}/${totalImagesToPreload}): ${imageUrl}`);
+                            resolve();
+                        }, 3000); // 개별 이미지당 3초 타임아웃
+                        
+                        img.onload = () => {
+                            clearTimeout(timeout);
+                            preloadedImages.add(imageUrl);
+                            console.log(`✅ 이미지 프리로딩 완료 (${preloadedImages.size}/${totalImagesToPreload}): ${imageUrl}`);
+                            resolve();
+                        };
+                        
+                        img.onerror = () => {
+                            clearTimeout(timeout);
+                            console.warn(`❌ 이미지 프리로딩 실패 (${index + 1}/${totalImagesToPreload}): ${imageUrl}`);
+                            resolve();
+                        };
+                        
+                        img.src = imageUrl;
+                    });
+                });
                 
-                console.log('🎯 백그라운드 이미지 프리로딩 완료');
+                // 모든 이미지 프리로딩 완료 대기 (최대 10초)
+                const allPreloadPromise = Promise.all(preloadPromises);
+                const overallTimeout = new Promise(resolve => 
+                    setTimeout(() => {
+                        console.warn('⏰ 전체 이미지 프리로딩 타임아웃 - 10초 경과');
+                        resolve();
+                    }, 10000)
+                );
+                
+                await Promise.race([allPreloadPromise, overallTimeout]);
+                
+                isPreloadingComplete = true;
+                console.log(`🎯 이미지 프리로딩 완료: ${preloadedImages.size}/${totalImagesToPreload}개 성공`);
+                
+                // 프리로딩 완료율 표시
+                const successRate = Math.round((preloadedImages.size / totalImagesToPreload) * 100);
+                console.log(`📊 프리로딩 성공률: ${successRate}%`);
                 
             } catch (error) {
-                console.error('❌ 백그라운드 프리로딩 오류:', error);
+                console.error('❌ 즉시 프리로딩 오류:', error);
+                isPreloadingComplete = true;
             }
+        }
+        
+        // 이미지가 이미 캐시되었는지 확인하는 함수
+        function isImageCached(imageUrl) {
+            return preloadedImages.has(imageUrl);
         }
 
         // 초기에는 더미 씬으로 시작
@@ -580,10 +607,8 @@
                 motionManager.updateScene(dummyScene, true); // skipInMotion = true
                 console.log('✅ Initial dummy scene applied - blank overlay ready');
                 
-                // 더미 씬 로딩 완료 후 백그라운드 프리로딩 시작
-                setTimeout(() => {
-                    preloadProjectImages();
-                }, 2000); // 2초 후 백그라운드 프리로딩 시작
+                // 더미 씬 로딩 완료 후 즉시 모든 이미지 프리로딩 시작
+                immediatePreloadAllImages(); // 즉시 시작
             })
             .catch(error => {
                 console.error('❌ Error loading initial dummy scene:', error);
@@ -597,10 +622,8 @@
                 motionManager.updateScene(emptyScene, true);
                 console.log('✅ Empty scene applied as fallback');
                 
-                // 백그라운드 프리로딩은 여전히 시도
-                setTimeout(() => {
-                    preloadProjectImages();
-                }, 2000);
+                // 즉시 프리로딩은 여전히 시도
+                immediatePreloadAllImages();
             });
 
         // 웹소켓 이벤트 핸들러
@@ -682,7 +705,7 @@
             }
         });
 
-        // 이미지 로딩 완료 대기 함수
+        // 이미지 로딩 완료 대기 함수 (캐시 우선 확인)
         async function waitForSceneImagesReady(sceneData) {
             const imageObjects = sceneData.objects.filter(obj => obj.type === 'image');
             
@@ -691,16 +714,29 @@
                 return;
             }
             
-            console.log(`📷 ${imageObjects.length}개 이미지 로딩 시작`);
+            console.log(`📷 ${imageObjects.length}개 이미지 준비 상태 확인`);
             
-            const imagePromises = imageObjects.map((obj, index) => {
+            // 이미 프리로딩된 이미지들 필터링
+            const cachedImages = imageObjects.filter(obj => isImageCached(obj.properties.src));
+            const uncachedImages = imageObjects.filter(obj => !isImageCached(obj.properties.src));
+            
+            console.log(`✅ 이미 캐시된 이미지: ${cachedImages.length}개`);
+            console.log(`⏳ 아직 로딩 필요한 이미지: ${uncachedImages.length}개`);
+            
+            // 캐시되지 않은 이미지들만 로딩 대기
+            if (uncachedImages.length === 0) {
+                console.log('🚀 모든 이미지가 이미 캐시됨 - 즉시 진행');
+                return;
+            }
+            
+            const imagePromises = uncachedImages.map((obj, index) => {
                 return new Promise((resolve) => {
                     const img = new Image();
                     const src = obj.properties.src;
                     
-                    // 이미 캐시된 이미지는 즉시 완료
-                    if (img.complete && img.naturalWidth > 0) {
-                        console.log(`✅ 이미지 캐시됨: ${src}`);
+                    // 한번 더 캐시 확인 (프리로딩이 완료되었을 수 있음)
+                    if (isImageCached(src)) {
+                        console.log(`✅ 이미지 캐시 확인됨: ${src}`);
                         resolve();
                         return;
                     }
@@ -708,11 +744,12 @@
                     const timeout = setTimeout(() => {
                         console.warn(`⏰ 이미지 로딩 타임아웃: ${src}`);
                         resolve(); // 타임아웃되어도 계속 진행
-                    }, 2000); // 2초 타임아웃
+                    }, 1000); // 캐시되지 않은 이미지는 1초만 대기 (이미 대부분 프리로딩됨)
                     
                     img.onload = () => {
                         clearTimeout(timeout);
-                        console.log(`✅ 이미지 로딩 완료 (${index + 1}/${imageObjects.length}): ${src}`);
+                        console.log(`✅ 이미지 로딩 완료 (${index + 1}/${uncachedImages.length}): ${src}`);
+                        preloadedImages.add(src); // 새로 로딩된 이미지도 캐시에 추가
                         resolve();
                     };
                     
@@ -726,53 +763,20 @@
                 });
             });
             
-            // 모든 이미지 로딩 완료 대기 (최대 3초)
+            // 캐시되지 않은 이미지들 로딩 완료 대기 (최대 2초)
             const loadingPromise = Promise.all(imagePromises);
             const timeoutPromise = new Promise(resolve => 
                 setTimeout(() => {
-                    console.warn('⏰ 전체 이미지 로딩 타임아웃 - 강제 진행');
+                    console.warn('⏰ 잔여 이미지 로딩 타임아웃 - 강제 진행');
                     resolve();
-                }, 3000)
+                }, 2000)
             );
             
             await Promise.race([loadingPromise, timeoutPromise]);
-            console.log('🎯 모든 이미지 로딩 처리 완료');
+            console.log('🎯 모든 이미지 준비 처리 완료');
         }
         
-        // 로딩 인디케이터 표시/숨김
-        function showLoadingIndicator(message) {
-            let indicator = document.getElementById('loading-indicator');
-            if (!indicator) {
-                indicator = document.createElement('div');
-                indicator.id = 'loading-indicator';
-                indicator.style.cssText = `
-                    position: fixed;
-                    top: 20px;
-                    right: 20px;
-                    background: rgba(0, 0, 0, 0.9);
-                    color: #00ff00;
-                    padding: 10px 20px;
-                    border-radius: 8px;
-                    font-family: 'Courier New', monospace;
-                    font-size: 12px;
-                    font-weight: bold;
-                    z-index: 10000;
-                    border: 1px solid #00ff00;
-                    box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
-                    display: none;
-                `;
-                document.body.appendChild(indicator);
-            }
-            indicator.textContent = message;
-            indicator.style.display = 'block';
-        }
-        
-        function hideLoadingIndicator() {
-            const indicator = document.getElementById('loading-indicator');
-            if (indicator) {
-                indicator.style.display = 'none';
-            }
-        }
+
 
         // 씬 변경 이벤트 수신 (개선된 버전)
         socket.on('scene_change', async (data) => {
@@ -780,20 +784,15 @@
             console.log('🌐 Loading scene from API:', data.scene_id);
             
             try {
-                // 1단계: 로딩 상태 표시
-                showLoadingIndicator('씬 준비 중...');
-                
-                // 2단계: 새로운 씬 데이터 가져오기
+                // 1단계: 새로운 씬 데이터 가져오기
                 const response = await fetch(`/api/overlay/scenes/${data.scene_id}`);
                 const newScene = await response.json();
                 console.log('📥 New scene loaded from API:', newScene);
                 
-                // 3단계: 해당 씬의 모든 이미지 로딩 완료 대기
-                showLoadingIndicator('이미지 로딩 중...');
+                // 2단계: 해당 씬의 모든 이미지 로딩 완료 대기 (백그라운드에서 조용히 처리)
                 await waitForSceneImagesReady(newScene);
                 
-                // 4단계: 로딩 완료 후 인모션 시작
-                hideLoadingIndicator();
+                // 3단계: 로딩 완료 후 인모션 시작
                 console.log('🚀 이미지 준비 완료 - 씬 전환 시작');
                 
                 currentScene = newScene;
@@ -802,7 +801,6 @@
                 
             } catch (error) {
                 console.error('❌ 씬 변경 중 오류:', error);
-                hideLoadingIndicator();
                 
                 // 오류 발생 시에도 기본적인 씬 전환은 시도
                 try {
