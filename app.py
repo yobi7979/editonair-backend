@@ -1243,11 +1243,12 @@ def overlay_user_project(username, project_name):
         
         print(f"Rendering template with scene: {scene.name if scene else 'None'}")
         return render_template('overlay.html', 
-                             project=project, 
+                             project=project_to_dict(project), 
                              scene=scene_to_dict(scene) if scene else None,
                              canvas_width=1920,
                              canvas_height=1080,
                              user_id=user.id,
+                             username=user.username,  # 사용자명도 직접 전달
                              channel_id=channel_id)  # 채널 ID도 템플릿에 전달
     except Exception as e:
         print(f"Error in overlay_user_project: {str(e)}")
