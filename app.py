@@ -79,7 +79,9 @@ try:
         allow_unsafe_werkzeug=True,
         ping_timeout=60,
         ping_interval=25,
-        max_http_buffer_size=1e8
+        max_http_buffer_size=1e8,
+        logger=True,
+        engineio_logger=True
     )
 
     print("Database and extensions initialized successfully")
@@ -583,45 +585,12 @@ def default_error_handler(e):
 
 @socketio.on('connect')
 def handle_connect():
-    """WebSocket 연결 처리"""
+    """WebSocket 연결 처리 - 간소화된 버전"""
     print(f"WebSocket connection attempt from {request.remote_addr}")
-    print(f"Query parameters: {request.args}")
     
-    token = request.args.get('token')
-    project_id = request.args.get('project_id')
-    user_id = request.args.get('user_id')
-    channel_id = request.args.get('channel_id', 'default')
-    
-    # 토큰이 없는 경우 (오버레이 페이지) - user_id와 channel_id로 룸 조인
-    if not token:
-        print(f"No token provided, checking user_id: {user_id}, channel_id: {channel_id}")
-        if user_id:
-            try:
-                user_id = int(user_id)
-                user_room = get_user_room_name(user_id, channel_id)
-                join_room(user_room)
-                print(f"Overlay page joined user room: {user_room}")
-                return True
-            except ValueError:
-                print("Invalid user_id format")
-                return False
-        else:
-            print("No user_id provided for overlay page")
-            return False
-        
-    # 토큰이 있는 경우 (프론트엔드 앱) - 사용자 인증
-    print(f"Token provided: {token[:20]}...")
-    try:
-        decoded = decode_token(token)
-        user_id = decoded['sub']
-        user_room = get_user_room_name(user_id, channel_id)
-        join_room(user_room)
-        print(f"Authenticated user {user_id} joined room: {user_room}")
-        return True
-    except Exception as e:
-        print(f"Token validation failed: {e}")
-        disconnect()
-        return False
+    # 기본적으로 연결 허용 (인증은 join 이벤트에서 처리)
+    print("WebSocket connection accepted")
+    return True
 
 @socketio.on('disconnect')
 def handle_disconnect():
