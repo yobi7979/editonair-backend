@@ -882,64 +882,64 @@ def handle_user_project_detail(username, project_name):
         # URL의 username과 현재 사용자명이 일치하는지 확인
         if current_user.username != username:
             return jsonify({'error': 'Permission denied'}), 403
-    
-    # 관리자 모드 확인
-    admin_token = request.headers.get('X-Admin-Token')
-    owner_id = request.headers.get('X-Owner-Id')
-    is_admin_mode = False
-    
-    if admin_token and owner_id:
-        # 관리자 토큰 검증
-        try:
-            decoded_token = jwt.decode(admin_token, app.config['SECRET_KEY'], algorithms=['HS256'])
-            admin_user = User.query.get(decoded_token['user_id'])
-            if admin_user and admin_user.username == 'admin':
-                is_admin_mode = True
-                # 관리자 모드일 때는 지정된 owner_id로 프로젝트 조회
-                project = get_project_by_name(project_name, int(owner_id))
-            else:
+        
+        # 관리자 모드 확인
+        admin_token = request.headers.get('X-Admin-Token')
+        owner_id = request.headers.get('X-Owner-Id')
+        is_admin_mode = False
+        
+        if admin_token and owner_id:
+            # 관리자 토큰 검증
+            try:
+                decoded_token = jwt.decode(admin_token, app.config['SECRET_KEY'], algorithms=['HS256'])
+                admin_user = User.query.get(decoded_token['user_id'])
+                if admin_user and admin_user.username == 'admin':
+                    is_admin_mode = True
+                    # 관리자 모드일 때는 지정된 owner_id로 프로젝트 조회
+                    project = get_project_by_name(project_name, int(owner_id))
+                else:
+                    project = get_project_by_name(project_name, current_user.id)
+            except:
                 project = get_project_by_name(project_name, current_user.id)
-        except:
+        else:
             project = get_project_by_name(project_name, current_user.id)
-    else:
-        project = get_project_by_name(project_name, current_user.id)
-    
-    # 프로젝트 접근 권한 확인
-    if not project:
-        return jsonify({'error': 'Project not found'}), 404
-    
-    # 관리자 모드가 아닐 때만 권한 확인
-    if not is_admin_mode and not check_project_permission(current_user.id, project.id, 'viewer'):
-        return jsonify({'error': 'Permission denied'}), 403
-
-    if request.method == 'GET':
-        return jsonify(project_to_dict(project))
-
-    elif request.method == 'PUT':
-        # 편집 권한 확인
-        if not check_project_permission(current_user.id, project.id, 'editor'):
-            return jsonify({'error': 'Permission denied'}), 403
-            
-        data = request.get_json()
-        if 'name' in data:
-            project.name = data['name']
-        db.session.commit()
-        return jsonify(project_to_dict(project))
         
-    elif request.method == 'DELETE':
-        # 소유자 권한 확인
-        if not check_project_permission(current_user.id, project.id, 'owner'):
-            return jsonify({'error': 'Permission denied'}), 403
-            
-        # 프로젝트 폴더 삭제
-        project_folder = get_project_folder(project.name, current_user.id)
-        if os.path.exists(project_folder):
-            shutil.rmtree(project_folder)
-            
-        db.session.delete(project)
-        db.session.commit()
-        return jsonify({'message': 'Project deleted successfully'})
+        # 프로젝트 접근 권한 확인
+        if not project:
+            return jsonify({'error': 'Project not found'}), 404
         
+        # 관리자 모드가 아닐 때만 권한 확인
+        if not is_admin_mode and not check_project_permission(current_user.id, project.id, 'viewer'):
+            return jsonify({'error': 'Permission denied'}), 403
+
+        if request.method == 'GET':
+            return jsonify(project_to_dict(project))
+
+        elif request.method == 'PUT':
+            # 편집 권한 확인
+            if not check_project_permission(current_user.id, project.id, 'editor'):
+                return jsonify({'error': 'Permission denied'}), 403
+                
+            data = request.get_json()
+            if 'name' in data:
+                project.name = data['name']
+            db.session.commit()
+            return jsonify(project_to_dict(project))
+            
+        elif request.method == 'DELETE':
+            # 소유자 권한 확인
+            if not check_project_permission(current_user.id, project.id, 'owner'):
+                return jsonify({'error': 'Permission denied'}), 403
+                
+            # 프로젝트 폴더 삭제
+            project_folder = get_project_folder(project.name, current_user.id)
+            if os.path.exists(project_folder):
+                shutil.rmtree(project_folder)
+                
+            db.session.delete(project)
+            db.session.commit()
+            return jsonify({'message': 'Project deleted successfully'})
+            
     except Exception as e:
         print(f"❌ Error in handle_user_project_detail: {str(e)}")
         import traceback
