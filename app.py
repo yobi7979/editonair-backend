@@ -871,16 +871,17 @@ def handle_project_detail(project_name):
 @app.route('/api/users/<username>/projects/<project_name>', methods=['GET', 'PUT', 'DELETE'])
 @auth_required('viewer')
 def handle_user_project_detail(username, project_name):
-    current_user = get_current_user_from_token()
-    
-    # 디버깅 로그 추가
-    print(f"🔍 User project detail request - User: {username}, Project: {project_name}")
-    print(f"🔍 Current user: {current_user.username if current_user else 'None'}")
-    print(f"🔍 User ID: {current_user.id if current_user else 'None'}")
-    
-    # URL의 username과 현재 사용자명이 일치하는지 확인
-    if current_user.username != username:
-        return jsonify({'error': 'Permission denied'}), 403
+    try:
+        current_user = get_current_user_from_token()
+        
+        # 디버깅 로그 추가
+        print(f"🔍 User project detail request - User: {username}, Project: {project_name}")
+        print(f"🔍 Current user: {current_user.username if current_user else 'None'}")
+        print(f"🔍 User ID: {current_user.id if current_user else 'None'}")
+        
+        # URL의 username과 현재 사용자명이 일치하는지 확인
+        if current_user.username != username:
+            return jsonify({'error': 'Permission denied'}), 403
     
     # 관리자 모드 확인
     admin_token = request.headers.get('X-Admin-Token')
@@ -938,6 +939,13 @@ def handle_user_project_detail(username, project_name):
         db.session.delete(project)
         db.session.commit()
         return jsonify({'message': 'Project deleted successfully'})
+        
+    except Exception as e:
+        print(f"❌ Error in handle_user_project_detail: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        db.session.rollback()
+        return jsonify({'error': f'Internal server error: {str(e)}'}), 500
 
 @app.route('/api/projects/<project_name>/share', methods=['POST'])
 @auth_required('owner')
