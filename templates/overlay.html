@@ -501,6 +501,75 @@
         console.log('No initial scene provided');
         {% endif %}
 
+        // 백그라운드 프리로딩 함수
+        async function preloadProjectImages() {
+            console.log('🔄 백그라운드 이미지 프리로딩 시작...');
+            
+            try {
+                // 프로젝트의 모든 씬 정보 가져오기
+                const response = await fetch(`/api/projects/${projectName}`);
+                const project = await response.json();
+                
+                if (!project.scenes) {
+                    console.log('📷 프리로딩할 씬이 없음');
+                    return;
+                }
+                
+                const allImageObjects = [];
+                project.scenes.forEach(scene => {
+                    const imageObjs = scene.objects.filter(obj => obj.type === 'image');
+                    allImageObjects.push(...imageObjs);
+                });
+                
+                if (allImageObjects.length === 0) {
+                    console.log('📷 프리로딩할 이미지가 없음');
+                    return;
+                }
+                
+                console.log(`📷 백그라운드에서 ${allImageObjects.length}개 이미지 프리로딩 시작`);
+                
+                // 순차적으로 프리로딩 (서버 부하 방지)
+                for (let i = 0; i < allImageObjects.length; i++) {
+                    const obj = allImageObjects[i];
+                    try {
+                        const img = new Image();
+                        await new Promise((resolve) => {
+                            const timeout = setTimeout(() => {
+                                console.warn(`⏰ 백그라운드 이미지 프리로딩 타임아웃: ${obj.properties.src}`);
+                                resolve();
+                            }, 1000); // 백그라운드는 1초 타임아웃
+                            
+                            img.onload = () => {
+                                clearTimeout(timeout);
+                                console.log(`✅ 백그라운드 이미지 프리로딩 완료 (${i + 1}/${allImageObjects.length}): ${obj.properties.src}`);
+                                resolve();
+                            };
+                            
+                            img.onerror = () => {
+                                clearTimeout(timeout);
+                                console.warn(`❌ 백그라운드 이미지 프리로딩 실패: ${obj.properties.src}`);
+                                resolve();
+                            };
+                            
+                            img.src = obj.properties.src;
+                        });
+                        
+                        // 다음 이미지 로딩 전 잠시 대기 (서버 부하 방지)
+                        if (i < allImageObjects.length - 1) {
+                            await new Promise(resolve => setTimeout(resolve, 100));
+                        }
+                    } catch (error) {
+                        console.warn(`❌ 백그라운드 이미지 프리로딩 오류: ${obj.properties.src}`, error);
+                    }
+                }
+                
+                console.log('🎯 백그라운드 이미지 프리로딩 완료');
+                
+            } catch (error) {
+                console.error('❌ 백그라운드 프리로딩 오류:', error);
+            }
+        }
+
         // 초기에는 더미 씬으로 시작
         console.log('🔄 Loading initial dummy scene...');
         fetch('/api/dummy-scene')
@@ -510,6 +579,11 @@
                 currentScene = dummyScene;
                 motionManager.updateScene(dummyScene, true); // skipInMotion = true
                 console.log('✅ Initial dummy scene applied - blank overlay ready');
+                
+                // 더미 씬 로딩 완료 후 백그라운드 프리로딩 시작
+                setTimeout(() => {
+                    preloadProjectImages();
+                }, 2000); // 2초 후 백그라운드 프리로딩 시작
             })
             .catch(error => {
                 console.error('❌ Error loading initial dummy scene:', error);
@@ -522,6 +596,11 @@
                 currentScene = emptyScene;
                 motionManager.updateScene(emptyScene, true);
                 console.log('✅ Empty scene applied as fallback');
+                
+                // 백그라운드 프리로딩은 여전히 시도
+                setTimeout(() => {
+                    preloadProjectImages();
+                }, 2000);
             });
 
         // 웹소켓 이벤트 핸들러
@@ -562,7 +641,7 @@
             socket.emit('request_scene');
         });
 
-        // 씬 데이터는 방송 시작 전까지 무시
+        // 씬 업데이트 이벤트 (기존 씬의 객체 변경)
         socket.on('scene_update', (scene) => {
             console.log('🎬 Scene update event received:', scene);
             if (scene.id === currentScene?.id) {
@@ -603,22 +682,138 @@
             }
         });
 
-        // 씬 변경 이벤트 수신
+        // 이미지 로딩 완료 대기 함수
+        async function waitForSceneImagesReady(sceneData) {
+            const imageObjects = sceneData.objects.filter(obj => obj.type === 'image');
+            
+            if (imageObjects.length === 0) {
+                console.log('📷 씬에 이미지가 없음 - 즉시 진행');
+                return;
+            }
+            
+            console.log(`📷 ${imageObjects.length}개 이미지 로딩 시작`);
+            
+            const imagePromises = imageObjects.map((obj, index) => {
+                return new Promise((resolve) => {
+                    const img = new Image();
+                    const src = obj.properties.src;
+                    
+                    // 이미 캐시된 이미지는 즉시 완료
+                    if (img.complete && img.naturalWidth > 0) {
+                        console.log(`✅ 이미지 캐시됨: ${src}`);
+                        resolve();
+                        return;
+                    }
+                    
+                    const timeout = setTimeout(() => {
+                        console.warn(`⏰ 이미지 로딩 타임아웃: ${src}`);
+                        resolve(); // 타임아웃되어도 계속 진행
+                    }, 2000); // 2초 타임아웃
+                    
+                    img.onload = () => {
+                        clearTimeout(timeout);
+                        console.log(`✅ 이미지 로딩 완료 (${index + 1}/${imageObjects.length}): ${src}`);
+                        resolve();
+                    };
+                    
+                    img.onerror = () => {
+                        clearTimeout(timeout);
+                        console.warn(`❌ 이미지 로딩 실패: ${src}`);
+                        resolve(); // 실패해도 계속 진행
+                    };
+                    
+                    img.src = src;
+                });
+            });
+            
+            // 모든 이미지 로딩 완료 대기 (최대 3초)
+            const loadingPromise = Promise.all(imagePromises);
+            const timeoutPromise = new Promise(resolve => 
+                setTimeout(() => {
+                    console.warn('⏰ 전체 이미지 로딩 타임아웃 - 강제 진행');
+                    resolve();
+                }, 3000)
+            );
+            
+            await Promise.race([loadingPromise, timeoutPromise]);
+            console.log('🎯 모든 이미지 로딩 처리 완료');
+        }
+        
+        // 로딩 인디케이터 표시/숨김
+        function showLoadingIndicator(message) {
+            let indicator = document.getElementById('loading-indicator');
+            if (!indicator) {
+                indicator = document.createElement('div');
+                indicator.id = 'loading-indicator';
+                indicator.style.cssText = `
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    background: rgba(0, 0, 0, 0.9);
+                    color: #00ff00;
+                    padding: 10px 20px;
+                    border-radius: 8px;
+                    font-family: 'Courier New', monospace;
+                    font-size: 12px;
+                    font-weight: bold;
+                    z-index: 10000;
+                    border: 1px solid #00ff00;
+                    box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+                    display: none;
+                `;
+                document.body.appendChild(indicator);
+            }
+            indicator.textContent = message;
+            indicator.style.display = 'block';
+        }
+        
+        function hideLoadingIndicator() {
+            const indicator = document.getElementById('loading-indicator');
+            if (indicator) {
+                indicator.style.display = 'none';
+            }
+        }
+
+        // 씬 변경 이벤트 수신 (개선된 버전)
         socket.on('scene_change', async (data) => {
-            console.log('🎬 Scene change event received:', data);
+            console.log('🔄 Scene change event received:', data);
             console.log('🌐 Loading scene from API:', data.scene_id);
             
             try {
-                // 오버레이 전용 API 사용 (인증 불필요)
+                // 1단계: 로딩 상태 표시
+                showLoadingIndicator('씬 준비 중...');
+                
+                // 2단계: 새로운 씬 데이터 가져오기
                 const response = await fetch(`/api/overlay/scenes/${data.scene_id}`);
                 const newScene = await response.json();
                 console.log('📥 New scene loaded from API:', newScene);
                 
+                // 3단계: 해당 씬의 모든 이미지 로딩 완료 대기
+                showLoadingIndicator('이미지 로딩 중...');
+                await waitForSceneImagesReady(newScene);
+                
+                // 4단계: 로딩 완료 후 인모션 시작
+                hideLoadingIndicator();
+                console.log('🚀 이미지 준비 완료 - 씬 전환 시작');
+                
                 currentScene = newScene;
-                motionManager.updateScene(newScene, false);
-                console.log('✅ New scene applied successfully');
+                motionManager.updateScene(newScene, false); // 이제 안전하게 인모션 실행
+                console.log('✅ 씬 전환 완료');
+                
             } catch (error) {
-                console.error('❌ Error loading new scene:', error);
+                console.error('❌ 씬 변경 중 오류:', error);
+                hideLoadingIndicator();
+                
+                // 오류 발생 시에도 기본적인 씬 전환은 시도
+                try {
+                    const response = await fetch(`/api/overlay/scenes/${data.scene_id}`);
+                    const newScene = await response.json();
+                    currentScene = newScene;
+                    motionManager.updateScene(newScene, true); // skipInMotion = true
+                    console.log('⚠️ 오류 복구 - 기본 씬 전환 완료');
+                } catch (fallbackError) {
+                    console.error('💥 씬 전환 완전 실패:', fallbackError);
+                }
             }
         });
 
