@@ -633,11 +633,16 @@
             console.log('Socket ID:', socket.id);
             console.log('Transport:', socket.io.engine.transport.name);
             
-            const projectId = {{ project.id }};
             const userId = {{ user_id }};
-            console.log('🏠 Joining user room: user_' + userId);
-            // 사용자별 룸에 자동으로 조인 (백엔드에서 처리)
-            console.log('🎯 Connected to user-specific overlay room');
+            const channelId = '{{ channel_id }}';
+            console.log('🏠 Joining user room: user_' + userId + ' (channel: ' + channelId + ')');
+            
+            // 사용자별 룸에 조인
+            const roomName = channelId && channelId !== 'default' ? 
+                'user_' + userId + '_channel_' + channelId : 
+                'user_' + userId;
+            socket.emit('join', { room: roomName });
+            console.log('🎯 Joined room: ' + roomName);
         });
 
         socket.on('disconnect', (reason) => {

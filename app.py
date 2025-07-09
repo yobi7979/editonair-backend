@@ -604,6 +604,17 @@ def handle_disconnect():
 @socketio.on('join')
 def handle_join(data):
     print(f"🎯 JOIN 이벤트 받음: {data}")
+    
+    # 오버레이 페이지에서 직접 룸 이름을 전달하는 경우
+    room = data.get('room')
+    if room:
+        print(f"🎯 직접 룸 조인 요청: {room}")
+        join_room(room)
+        print(f"✅ Socket.io: 클라이언트가 룸에 참여 - {room}")
+        emit('joined', {'room': room})
+        return
+    
+    # 기존 방식 (프로젝트 기반)
     project_name = data.get('project')
     overlay_user_id = data.get('user_id')  # 오버레이에서 제공하는 user_id
     
@@ -1721,48 +1732,26 @@ def update_object_orders(scene_id):
 
 @socketio.on('scene_change')
 def handle_scene_change(data):
-    """씬 변경 이벤트 처리 - 인증된 사용자만 가능"""
+    """씬 변경 이벤트 처리 - 서버에서 직접 emit하므로 단순 전달"""
     try:
-        token = request.args.get('token')
-        if not token:
-            disconnect()
-            return False
-            
-        decoded = decode_token(token)
-        project_id = data.get('project_id')
-        
-        # 프로젝트 권한이 있는 경우만 허용
-        if check_project_permission(project_id):
-            emit('scene_change', data, room=f'project_{project_id}')
-            return True
-            
-        disconnect()
-        return False
-    except:
-        disconnect()
+        print(f"🔍 Scene change event received: {data}")
+        # 서버에서 직접 emit하는 이벤트이므로 단순히 전달
+        emit('scene_change', data)
+        return True
+    except Exception as e:
+        print(f"❌ Error in handle_scene_change: {str(e)}")
         return False
 
 @socketio.on('scene_out')
 def handle_scene_out(data):
-    """씬 아웃 이벤트 처리 - 인증된 사용자만 가능"""
+    """씬 아웃 이벤트 처리 - 서버에서 직접 emit하므로 단순 전달"""
     try:
-        token = request.args.get('token')
-        if not token:
-            disconnect()
-            return False
-            
-        decoded = decode_token(token)
-        project_id = data.get('project_id')
-        
-        # 프로젝트 권한이 있는 경우만 허용
-        if check_project_permission(project_id):
-            emit('scene_out', room=f'project_{project_id}')
-            return True
-            
-        disconnect()
-        return False
-    except:
-        disconnect()
+        print(f"🔍 Scene out event received: {data}")
+        # 서버에서 직접 emit하는 이벤트이므로 단순히 전달
+        emit('scene_out', data)
+        return True
+    except Exception as e:
+        print(f"❌ Error in handle_scene_out: {str(e)}")
         return False
 
 @socketio.on('get_first_scene')
