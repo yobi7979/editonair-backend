@@ -2642,9 +2642,50 @@ def create_backup_data():
     try:
         libraries_info = get_project_library_info()
         libraries_files = get_libraries_files_info()
+        
+        # 라이브러리 정보 요약 계산
+        total_images = 0
+        total_sequences = 0
+        total_thumbnails = 0
+        total_size = 0
+        
+        print(f"📊 라이브러리 정보 요약 계산 중...")
+        for project_name, project_libs in libraries_files.items():
+            project_images = len(project_libs['images'])
+            project_thumbnails = len(project_libs['thumbnails'])
+            project_sequences = sum(len(seq['files']) for seq in project_libs['sequences'])
+            
+            # 파일 크기 합계 계산
+            for img in project_libs['images']:
+                total_size += img['size']
+            for thumb in project_libs['thumbnails']:
+                total_size += thumb['size']
+            for seq in project_libs['sequences']:
+                for file in seq['files']:
+                    total_size += file['size']
+            
+            total_images += project_images
+            total_thumbnails += project_thumbnails
+            total_sequences += project_sequences
+            
+            print(f"📊 프로젝트 '{project_name}' 라이브러리:")
+            print(f"  - 이미지: {project_images}개")
+            print(f"  - 썸네일: {project_thumbnails}개")
+            print(f"  - 시퀀스 파일: {project_sequences}개")
+        
+        print(f"📊 전체 라이브러리 요약:")
+        print(f"  - 총 이미지: {total_images}개")
+        print(f"  - 총 썸네일: {total_thumbnails}개")
+        print(f"  - 총 시퀀스 파일: {total_sequences}개")
+        print(f"  - 총 크기: {total_size:,} bytes ({total_size / 1024 / 1024:.2f} MB)")
+        
     except Exception as e:
         print(f"Libraries info error: {e}")
         libraries_info['error'] = str(e)
+        total_images = 0
+        total_sequences = 0
+        total_thumbnails = 0
+        total_size = 0
     
     # 백업 메타데이터
     backup_metadata = {
@@ -2658,13 +2699,23 @@ def create_backup_data():
         'metadata': backup_metadata,
         'database': db_backup,
         'libraries_info': libraries_info,
-        'libraries_files': libraries_files
+        'libraries_files': libraries_files,
+        'libraries_summary': {
+            'total_images': total_images,
+            'total_thumbnails': total_thumbnails,
+            'total_sequences': total_sequences,
+            'total_size': total_size
+        }
     }
 
 def get_libraries_files_info():
-    """프로젝트별 라이브러리 파일 정보 수집"""
+    """프로젝트별 라이브러리 파일 정보 수집 (개선된 버전)"""
     projects_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'projects')
+    print(f"🔍 라이브러리 정보 수집: projects_dir = {projects_dir}")
+    print(f"🔍 projects_dir exists = {os.path.exists(projects_dir)}")
+    
     if not os.path.exists(projects_dir):
+        print("❌ projects 디렉토리가 존재하지 않습니다.")
         return {}
     
     libraries_files = {}
@@ -2674,8 +2725,11 @@ def get_libraries_files_info():
         if not os.path.isdir(project_path):
             continue
             
+        print(f"🔍 프로젝트 처리 중: {project_dir}")
         library_path = os.path.join(project_path, 'library')
+        
         if not os.path.exists(library_path):
+            print(f"⚠️ 프로젝트 '{project_dir}'에 library 폴더가 없습니다.")
             libraries_files[project_dir] = {
                 'images': [],
                 'sequences': [],
@@ -2689,53 +2743,82 @@ def get_libraries_files_info():
             'thumbnails': []
         }
         
-        # 이미지 파일 정보
+        # 이미지 파일 정보 수집
         images_path = os.path.join(library_path, 'images')
         if os.path.exists(images_path):
+            print(f"🔍 이미지 폴더 처리: {images_path}")
             for file in os.listdir(images_path):
                 if file.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
                     file_path = os.path.join(images_path, file)
                     if os.path.isfile(file_path):
+                        file_size = os.path.getsize(file_path)
                         project_files['images'].append({
                             'filename': file,
-                            'size': os.path.getsize(file_path),
+                            'size': file_size,
                             'path': f'library/images/{file}'
                         })
+                        print(f"  ✅ 이미지 파일: {file} ({file_size} bytes)")
+        else:
+            print(f"⚠️ 프로젝트 '{project_dir}'에 images 폴더가 없습니다.")
         
-        # 썸네일 파일 정보
+        # 썸네일 파일 정보 수집
         thumbnails_path = os.path.join(library_path, 'thumbnails')
         if os.path.exists(thumbnails_path):
+            print(f"🔍 썸네일 폴더 처리: {thumbnails_path}")
             for file in os.listdir(thumbnails_path):
                 if file.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
                     file_path = os.path.join(thumbnails_path, file)
                     if os.path.isfile(file_path):
+                        file_size = os.path.getsize(file_path)
                         project_files['thumbnails'].append({
                             'filename': file,
-                            'size': os.path.getsize(file_path),
+                            'size': file_size,
                             'path': f'library/thumbnails/{file}'
                         })
+                        print(f"  ✅ 썸네일 파일: {file} ({file_size} bytes)")
+        else:
+            print(f"⚠️ 프로젝트 '{project_dir}'에 thumbnails 폴더가 없습니다.")
         
-        # 시퀀스 파일 정보
+        # 시퀀스 파일 정보 수집
         sequences_path = os.path.join(library_path, 'sequences')
         if os.path.exists(sequences_path):
+            print(f"🔍 시퀀스 폴더 처리: {sequences_path}")
             for seq_dir in os.listdir(sequences_path):
                 seq_path = os.path.join(sequences_path, seq_dir)
                 if os.path.isdir(seq_path):
+                    print(f"  🔍 시퀀스 '{seq_dir}' 처리 중...")
                     seq_files = []
                     for root, dirs, files in os.walk(seq_path):
                         for file in files:
                             file_path = os.path.join(root, file)
                             if os.path.isfile(file_path):
                                 rel_path = os.path.relpath(file_path, seq_path)
+                                file_size = os.path.getsize(file_path)
                                 seq_files.append({
                                     'filename': file,
                                     'path': f'library/sequences/{seq_dir}/{rel_path}',
-                                    'size': os.path.getsize(file_path)
+                                    'size': file_size
                                 })
-                    project_files['sequences'].append({
-                        'sequence_name': seq_dir,
-                        'files': seq_files
-                    })
+                                print(f"    ✅ 시퀀스 파일: {file} ({file_size} bytes)")
+                    
+                    if seq_files:
+                        project_files['sequences'].append({
+                            'sequence_name': seq_dir,
+                            'files': seq_files
+                        })
+                        print(f"  ✅ 시퀀스 '{seq_dir}' 완료: {len(seq_files)}개 파일")
+        else:
+            print(f"⚠️ 프로젝트 '{project_dir}'에 sequences 폴더가 없습니다.")
+        
+        # 프로젝트별 요약 정보 출력
+        total_images = len(project_files['images'])
+        total_thumbnails = len(project_files['thumbnails'])
+        total_sequences = sum(len(seq['files']) for seq in project_files['sequences'])
+        
+        print(f"📊 프로젝트 '{project_dir}' 요약:")
+        print(f"  - 이미지: {total_images}개")
+        print(f"  - 썸네일: {total_thumbnails}개")
+        print(f"  - 시퀀스 파일: {total_sequences}개")
         
         libraries_files[project_dir] = project_files
     
@@ -3008,13 +3091,65 @@ def restore_libraries_from_zip(zipf, libraries_files):
 @app.route('/api/admin/libraries/info', methods=['GET'])
 @admin_required
 def get_libraries_info():
-    """프로젝트별 라이브러리 정보 조회"""
+    """프로젝트별 라이브러리 정보 조회 (개선된 버전)"""
     try:
         with app.app_context():
+            # 기존 라이브러리 정보
             libraries_info = get_project_library_info()
+            
+            # 상세 파일 정보 수집
+            libraries_files = get_libraries_files_info()
+            
+            # 프로젝트별 상세 정보 계산
+            detailed_info = {}
+            total_images = 0
+            total_sequences = 0
+            total_thumbnails = 0
+            total_size = 0
+            
+            for project_name, project_libs in libraries_files.items():
+                project_images = len(project_libs['images'])
+                project_thumbnails = len(project_libs['thumbnails'])
+                project_sequences = sum(len(seq['files']) for seq in project_libs['sequences'])
+                
+                # 파일 크기 합계 계산
+                project_size = 0
+                for img in project_libs['images']:
+                    project_size += img['size']
+                for thumb in project_libs['thumbnails']:
+                    project_size += thumb['size']
+                for seq in project_libs['sequences']:
+                    for file in seq['files']:
+                        project_size += file['size']
+                
+                detailed_info[project_name] = {
+                    'images': project_images,
+                    'thumbnails': project_thumbnails,
+                    'sequences': project_sequences,
+                    'size': project_size,
+                    'size_mb': round(project_size / 1024 / 1024, 2)
+                }
+                
+                total_images += project_images
+                total_thumbnails += project_thumbnails
+                total_sequences += project_sequences
+                total_size += project_size
+            
+            # 전체 요약 정보
+            summary = {
+                'total_projects': len(libraries_files),
+                'total_images': total_images,
+                'total_thumbnails': total_thumbnails,
+                'total_sequences': total_sequences,
+                'total_size': total_size,
+                'total_size_mb': round(total_size / 1024 / 1024, 2)
+            }
+            
         return jsonify({
             'success': True,
-            'libraries_info': libraries_info
+            'libraries_info': libraries_info,
+            'detailed_info': detailed_info,
+            'summary': summary
         }), 200
     except Exception as e:
         print(f"Libraries info error: {e}")
