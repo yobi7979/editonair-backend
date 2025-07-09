@@ -981,20 +981,8 @@ def handle_project_share(project_name):
 @app.route('/api/projects/<project_name>/scenes', methods=['POST'])
 @auth_required('editor')
 def create_scene(project_name):
-
-@app.route('/api/users/<username>/projects/<project_name>/scenes', methods=['POST'])
-@auth_required('editor')
-def create_user_scene(username, project_name):
     current_user = get_current_user_from_token()
-    
-    # URL의 username과 현재 사용자명이 일치하는지 확인
-    if current_user.username != username:
-        return jsonify({'error': 'Permission denied'}), 403
-    
     project = get_project_by_name(project_name, current_user.id)
-    if not project:
-        return jsonify({'error': 'Project not found'}), 404
-        
     data = request.get_json()
     if not data or 'name' not in data:
         return jsonify({'error': 'Scene name is required'}), 400
@@ -1010,8 +998,20 @@ def create_user_scene(username, project_name):
     db.session.add(new_scene)
     db.session.commit()
     return jsonify(scene_to_dict(new_scene)), 201
+
+@app.route('/api/users/<username>/projects/<project_name>/scenes', methods=['POST'])
+@auth_required('editor')
+def create_user_scene(username, project_name):
     current_user = get_current_user_from_token()
+    
+    # URL의 username과 현재 사용자명이 일치하는지 확인
+    if current_user.username != username:
+        return jsonify({'error': 'Permission denied'}), 403
+    
     project = get_project_by_name(project_name, current_user.id)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+        
     data = request.get_json()
     if not data or 'name' not in data:
         return jsonify({'error': 'Scene name is required'}), 400
@@ -3835,42 +3835,4 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     socketio.run(app, debug=False, host='0.0.0.0', port=port, allow_unsafe_werkzeug=True)
 
-# 임시 접근 토큰 관련 함수
-def generate_overlay_token(project_id):
-    """오버레이 페이지용 임시 접근 토큰 생성"""
-    expires = datetime.utcnow() + timedelta(days=30)  # 30일 유효
-    token = create_access_token(
-        identity=project_id,
-        expires_delta=timedelta(days=30),
-        additional_claims={'type': 'overlay'}
-    )
-    return token
 
-def verify_overlay_token(token):
-    """오버레이 페이지용 토큰 검증"""
-    try:
-        decoded = decode_token(token)
-        if decoded.get('type') != 'overlay':
-            return None
-        return decoded['sub']  # project_id 반환
-    except:
-        return None
-
-@app.route('/api/projects/<int:project_id>/overlay-token', methods=['POST'])
-@jwt_required()
-def create_overlay_token(project_id):
-    """프로젝트의 오버레이 접근 토큰 생성 API"""
-    project = get_project_by_name(project_id)  # project_id를 프로젝트 이름으로 변경
-    
-    # 프로젝트 접근 권한 확인
-    if not check_project_permission(project_id):  # project_id를 프로젝트 이름으로 변경
-        return jsonify({'message': '권한이 없습니다.'}), 403
-        
-    token = generate_overlay_token(project_id)
-    return jsonify({'token': token})
-
-@app.route('/overlay/<int:project_id>')
-def overlay_page(project_id):
-    """오버레이 페이지 렌더링 - 퍼블릭 접근 허용"""
-    project = get_project_by_name(project_id)  # project_id를 프로젝트 이름으로 변경
-    return render_template('overlay.html', project=project)
