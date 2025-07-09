@@ -3626,8 +3626,13 @@ def control_timer(object_id, action):
         else:
             return jsonify({'error': '유효하지 않은 액션입니다.'}), 400
         
-        # 현재 타이머 상태 조회
-        timer_state = live_state_manager.get_timer_state(object_id)
+        # 객체의 시간 형식 속성 가져오기
+        import json
+        obj_properties = json.loads(obj.properties) if obj.properties else {}
+        time_format = obj_properties.get('timeFormat', 'MM:SS')
+        
+        # 현재 타이머 상태 조회 (시간 형식 적용)
+        timer_state = live_state_manager.get_timer_state(object_id, time_format)
         
         # 라이브 상태에도 업데이트
         live_state_manager.update_object_property(project_name, object_id, 'content', timer_state['current_time'])

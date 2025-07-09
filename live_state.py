@@ -122,13 +122,13 @@ class LiveStateManager:
             'elapsed': 0
         }
     
-    def get_timer_state(self, object_id: int) -> Dict[str, Any]:
+    def get_timer_state(self, object_id: int, time_format: str = 'MM:SS') -> Dict[str, Any]:
         """타이머 상태 반환"""
         if object_id not in self.timer_states:
             return {
                 'is_running': False,
                 'elapsed': 0,
-                'current_time': '00:00'
+                'current_time': self._format_time(0, time_format)
             }
         
         timer = self.timer_states[object_id]
@@ -138,16 +138,31 @@ class LiveStateManager:
             current_time = time.time()
             elapsed += (current_time - timer['start_time'])
         
-        # 시간 포맷팅 (MM:SS)
-        minutes = int(elapsed // 60)
-        seconds = int(elapsed % 60)
-        current_time_str = f"{minutes:02d}:{seconds:02d}"
+        # 시간 포맷팅
+        current_time_str = self._format_time(elapsed, time_format)
         
         return {
             'is_running': timer['is_running'],
             'elapsed': elapsed,
             'current_time': current_time_str
         }
+    
+    def _format_time(self, elapsed_seconds: float, time_format: str = 'MM:SS') -> str:
+        """시간을 지정된 형식으로 포맷팅"""
+        if time_format == 'SS':
+            # 초만 표시
+            return f"{int(elapsed_seconds):02d}"
+        elif time_format == 'HH:MM:SS':
+            # 시:분:초 형식
+            hours = int(elapsed_seconds // 3600)
+            minutes = int((elapsed_seconds % 3600) // 60)
+            seconds = int(elapsed_seconds % 60)
+            return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        else:
+            # 기본 MM:SS 형식
+            minutes = int(elapsed_seconds // 60)
+            seconds = int(elapsed_seconds % 60)
+            return f"{minutes:02d}:{seconds:02d}"
 
 # 전역 라이브 상태 관리자 인스턴스
 live_state_manager = LiveStateManager() 
