@@ -17,7 +17,7 @@ from live_state import live_state_manager
 # 백업 시스템 import
 from backup_db import backup_all, list_backups, restore_project_libraries, get_project_library_info
 
-from flask import Flask, jsonify, request, render_template, send_from_directory, session
+from flask import Flask, jsonify, request, render_template, send_from_directory, session, make_response
 from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO, emit, join_room, leave_room, disconnect
 from flask_jwt_extended import JWTManager, create_access_token, get_jwt_identity, jwt_required, decode_token
@@ -84,6 +84,10 @@ except Exception as e:
 # 사용자별 송출 상태 (메모리 저장)
 user_broadcast_state = {}
 
+# 백업/복구 진행상황 관리
+backup_progress = {}
+restore_progress = {}
+
 def get_user_broadcast_state(user_id, channel_id=None):
     """사용자 및 채널별 송출 상태 가져오기"""
     # channel_id가 없으면 기본 채널 사용
@@ -114,6 +118,38 @@ def get_user_room_name(user_id, channel_id=None):
     if channel_id and channel_id != 'default':
         return f'user_{user_id}_channel_{channel_id}'
     return f'user_{user_id}'
+
+def update_backup_progress(user_id, step, message, percentage=None):
+    """백업 진행상황 업데이트"""
+    if user_id not in backup_progress:
+        backup_progress[user_id] = {}
+    
+    backup_progress[user_id] = {
+        'step': step,
+        'message': message,
+        'percentage': percentage,
+        'timestamp': datetime.now().isoformat()
+    }
+    
+    # WebSocket으로 진행상황 전송
+    user_room = f'user_{user_id}'
+    socketio.emit('backup_progress', backup_progress[user_id], room=user_room)
+
+def update_restore_progress(user_id, step, message, percentage=None):
+    """복구 진행상황 업데이트"""
+    if user_id not in restore_progress:
+        restore_progress[user_id] = {}
+    
+    restore_progress[user_id] = {
+        'step': step,
+        'message': message,
+        'percentage': percentage,
+        'timestamp': datetime.now().isoformat()
+    }
+    
+    # WebSocket으로 진행상황 전송
+    user_room = f'user_{user_id}'
+    socketio.emit('restore_progress', restore_progress[user_id], room=user_room)
 
 # --- Database Models ---
 
@@ -2424,15 +2460,25 @@ def restore_database():
 def backup_database():
     """전체 시스템 백업 (JSON + 라이브러리 ZIP 다운로드)"""
     try:
+        user_id = get_jwt_identity()
+        
         with app.app_context():
+            # 백업 시작
+            update_backup_progress(user_id, 'start', '백업을 시작합니다...', 0)
+            
             # 백업 데이터 생성
+            update_backup_progress(user_id, 'database', '데이터베이스 정보를 수집하고 있습니다...', 10)
             backup_data = create_backup_data()
+            update_backup_progress(user_id, 'database', '데이터베이스 정보 수집 완료', 30)
             
             # 라이브러리 파일들을 ZIP으로 압축
             import zipfile
             import io
+            import json
             
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            
+            update_backup_progress(user_id, 'zip', 'ZIP 파일을 생성하고 있습니다...', 40)
             
             # 메모리에 ZIP 파일 생성
             zip_buffer = io.BytesIO()
@@ -2440,27 +2486,31 @@ def backup_database():
                 # JSON 백업 데이터를 ZIP에 추가
                 json_data = json.dumps(backup_data, indent=2, ensure_ascii=False)
                 zipf.writestr('backup_info.json', json_data)
+                update_backup_progress(user_id, 'zip', '백업 정보를 ZIP에 추가했습니다', 50)
                 
                 # 라이브러리 파일들을 ZIP에 추가
                 projects_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'projects')
                 if os.path.exists(projects_dir):
-                    for project_dir in os.listdir(projects_dir):
+                    project_dirs = [d for d in os.listdir(projects_dir) if os.path.isdir(os.path.join(projects_dir, d))]
+                    total_projects = len(project_dirs)
+                    
+                    for i, project_dir in enumerate(project_dirs):
                         project_path = os.path.join(projects_dir, project_dir)
-                        if not os.path.isdir(project_path):
-                            continue
-                        
                         library_path = os.path.join(project_path, 'library')
-                        if not os.path.exists(library_path):
-                            continue
                         
-                        # 프로젝트별 라이브러리 폴더를 ZIP에 추가
-                        for root, dirs, files in os.walk(library_path):
-                            for file in files:
-                                file_path = os.path.join(root, file)
-                                # ZIP 내에서의 상대 경로
-                                arcname = os.path.join(f'projects/{project_dir}', 
-                                                     os.path.relpath(file_path, project_path))
-                                zipf.write(file_path, arcname)
+                        if os.path.exists(library_path):
+                            update_backup_progress(user_id, 'libraries', f'프로젝트 "{project_dir}" 라이브러리를 압축하고 있습니다... ({i+1}/{total_projects})', 50 + (i * 30 // total_projects))
+                            
+                            # 프로젝트별 라이브러리 폴더를 ZIP에 추가
+                            for root, dirs, files in os.walk(library_path):
+                                for file in files:
+                                    file_path = os.path.join(root, file)
+                                    # ZIP 내에서의 상대 경로
+                                    arcname = os.path.join(f'projects/{project_dir}', 
+                                                         os.path.relpath(file_path, project_path))
+                                    zipf.write(file_path, arcname)
+            
+            update_backup_progress(user_id, 'complete', '백업 파일 생성이 완료되었습니다. 다운로드를 시작합니다...', 100)
             
             # ZIP 파일을 응답으로 반환
             zip_buffer.seek(0)
@@ -2472,6 +2522,8 @@ def backup_database():
             
     except Exception as e:
         print(f"Backup error: {e}")
+        if 'user_id' in locals():
+            update_backup_progress(user_id, 'error', f'백업 중 오류가 발생했습니다: {str(e)}', None)
         return jsonify({
             'success': False,
             'message': f'백업 중 오류가 발생했습니다: {str(e)}'
@@ -2646,6 +2698,8 @@ def get_backup_list():
 def restore_backup():
     """백업 파일에서 복구"""
     try:
+        user_id = get_jwt_identity()
+        
         if 'backup_file' not in request.files:
             return jsonify({
                 'success': False,
@@ -2667,10 +2721,15 @@ def restore_backup():
             }), 400
         
         with app.app_context():
+            # 복구 시작
+            update_restore_progress(user_id, 'start', '복구를 시작합니다...', 0)
+            
             # ZIP 파일 처리
             import zipfile
             import io
             import json
+            
+            update_restore_progress(user_id, 'read', '백업 파일을 읽고 있습니다...', 10)
             
             # ZIP 파일 읽기
             zip_data = io.BytesIO(backup_file.read())
@@ -2678,11 +2737,13 @@ def restore_backup():
             with zipfile.ZipFile(zip_data, 'r') as zipf:
                 # 백업 정보 JSON 읽기
                 if 'backup_info.json' not in zipf.namelist():
+                    update_restore_progress(user_id, 'error', '백업 정보 파일을 찾을 수 없습니다.', None)
                     return jsonify({
                         'success': False,
                         'message': '백업 정보 파일을 찾을 수 없습니다.'
                     }), 400
                 
+                update_restore_progress(user_id, 'parse', '백업 정보를 분석하고 있습니다...', 20)
                 backup_info = json.loads(zipf.read('backup_info.json').decode('utf-8'))
                 
                 # 복구 옵션 확인
@@ -2690,6 +2751,7 @@ def restore_backup():
                 restore_libraries = request.form.get('restore_libraries', 'false').lower() == 'true'
                 
                 if not restore_database and not restore_libraries:
+                    update_restore_progress(user_id, 'error', '복구할 항목을 선택해주세요.', None)
                     return jsonify({
                         'success': False,
                         'message': '복구할 항목을 선택해주세요.'
@@ -2697,21 +2759,29 @@ def restore_backup():
                 
                 # 데이터베이스 복구
                 if restore_database:
+                    update_restore_progress(user_id, 'database', '데이터베이스를 복구하고 있습니다...', 30)
                     success = restore_database_from_backup(backup_info['database'])
                     if not success:
+                        update_restore_progress(user_id, 'error', '데이터베이스 복구 중 오류가 발생했습니다.', None)
                         return jsonify({
                             'success': False,
                             'message': '데이터베이스 복구 중 오류가 발생했습니다.'
                         }), 500
+                    update_restore_progress(user_id, 'database', '데이터베이스 복구 완료', 60)
                 
                 # 라이브러리 복구
                 if restore_libraries:
+                    update_restore_progress(user_id, 'libraries', '라이브러리 파일들을 복구하고 있습니다...', 70)
                     success = restore_libraries_from_zip(zipf, backup_info.get('libraries_files', {}))
                     if not success:
+                        update_restore_progress(user_id, 'error', '라이브러리 복구 중 오류가 발생했습니다.', None)
                         return jsonify({
                             'success': False,
                             'message': '라이브러리 복구 중 오류가 발생했습니다.'
                         }), 500
+                    update_restore_progress(user_id, 'libraries', '라이브러리 복구 완료', 90)
+                
+                update_restore_progress(user_id, 'complete', '복구가 성공적으로 완료되었습니다!', 100)
                 
                 return jsonify({
                     'success': True,
@@ -2722,6 +2792,8 @@ def restore_backup():
                 
     except Exception as e:
         print(f"Restore error: {e}")
+        if 'user_id' in locals():
+            update_restore_progress(user_id, 'error', f'복구 중 오류가 발생했습니다: {str(e)}', None)
         return jsonify({
             'success': False,
             'message': f'복구 중 오류가 발생했습니다: {str(e)}'
@@ -2730,7 +2802,10 @@ def restore_backup():
 def restore_database_from_backup(db_data):
     """백업 데이터에서 데이터베이스 복구"""
     try:
+        user_id = get_jwt_identity()
+        
         # 기존 데이터 삭제 (순서 주의)
+        update_restore_progress(user_id, 'database', '기존 데이터를 삭제하고 있습니다...', 35)
         Object.query.delete()
         Scene.query.delete()
         ProjectPermission.query.delete()
@@ -2738,6 +2813,7 @@ def restore_database_from_backup(db_data):
         User.query.delete()
         
         # 사용자 복구
+        update_restore_progress(user_id, 'database', '사용자 데이터를 복구하고 있습니다...', 40)
         for user_data in db_data.get('users', []):
             user = User(
                 id=user_data['id'],
@@ -2749,6 +2825,7 @@ def restore_database_from_backup(db_data):
             db.session.add(user)
         
         # 프로젝트 복구
+        update_restore_progress(user_id, 'database', '프로젝트 데이터를 복구하고 있습니다...', 45)
         for project_data in db_data.get('projects', []):
             project = Project(
                 id=project_data['id'],
@@ -2760,6 +2837,7 @@ def restore_database_from_backup(db_data):
             db.session.add(project)
         
         # 씬 복구
+        update_restore_progress(user_id, 'database', '씬 데이터를 복구하고 있습니다...', 50)
         for scene_data in db_data.get('scenes', []):
             scene = Scene(
                 id=scene_data['id'],
@@ -2773,6 +2851,7 @@ def restore_database_from_backup(db_data):
             db.session.add(scene)
         
         # 객체 복구
+        update_restore_progress(user_id, 'database', '객체 데이터를 복구하고 있습니다...', 55)
         for object_data in db_data.get('objects', []):
             obj = Object(
                 id=object_data['id'],
@@ -2790,6 +2869,7 @@ def restore_database_from_backup(db_data):
             db.session.add(obj)
         
         # 권한 복구
+        update_restore_progress(user_id, 'database', '권한 데이터를 복구하고 있습니다...', 58)
         for perm_data in db_data.get('permissions', []):
             perm = ProjectPermission(
                 id=perm_data['id'],
@@ -2801,6 +2881,7 @@ def restore_database_from_backup(db_data):
             )
             db.session.add(perm)
         
+        update_restore_progress(user_id, 'database', '데이터베이스에 저장하고 있습니다...', 59)
         db.session.commit()
         return True
         
@@ -2812,9 +2893,13 @@ def restore_database_from_backup(db_data):
 def restore_libraries_from_zip(zipf, libraries_files):
     """ZIP 파일에서 라이브러리 복구"""
     try:
+        user_id = get_jwt_identity()
         projects_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'projects')
         
-        for project_name, project_files in libraries_files.items():
+        total_projects = len(libraries_files)
+        for i, (project_name, project_files) in enumerate(libraries_files.items()):
+            update_restore_progress(user_id, 'libraries', f'프로젝트 "{project_name}" 라이브러리를 복구하고 있습니다... ({i+1}/{total_projects})', 70 + (i * 15 // total_projects))
+            
             project_dir = os.path.join(projects_dir, project_name)
             os.makedirs(project_dir, exist_ok=True)
             
