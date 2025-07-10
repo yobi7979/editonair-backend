@@ -1038,8 +1038,9 @@
             for (const timerObj of timerObjects) {
                 try {
                     // 서버에서 타이머 상태 가져오기
-                    const projectName = '{{ project_name }}';
-                    const response = await fetch(`/api/live/objects/${timerObj.id}/timer/status?project_name=${encodeURIComponent(projectName)}`);
+                    const projectName = '{{ project.name }}';
+                    const channelId = '{{ channel_id }}';
+                    const response = await fetch(`/api/live/objects/${timerObj.id}/timer/status?project_name=${encodeURIComponent(projectName)}&channel_id=${encodeURIComponent(channelId)}`);
                     if (response.ok) {
                         const timerData = await response.json();
                         console.log(`⏰ 타이머 ${timerObj.id} 서버 상태:`, timerData);
