@@ -4013,8 +4013,11 @@ def control_timer(object_id, action):
         obj_properties = json.loads(obj.properties) if obj.properties else {}
         time_format = obj_properties.get('timeFormat', 'MM:SS')
         
+        print(f"⏰ 타이머 제어 - 객체 ID: {object_id}, 액션: {action}, 시간 형식: {time_format}")
+        
         # 현재 타이머 상태 조회 (시간 형식 적용)
         timer_state = live_state_manager.get_timer_state(object_id, time_format)
+        print(f"⏰ 타이머 상태 조회 결과: {timer_state}")
         
         # 라이브 상태에도 업데이트
         live_state_manager.update_object_property(project_name, object_id, 'content', timer_state['current_time'])
@@ -4223,16 +4226,25 @@ def update_shape_live(object_id):
 def websocket_timer_update_callback(timer_update_data, project_name):
     """타이머 업데이트를 WebSocket으로 전송하는 콜백 함수"""
     try:
+        print(f"⏰ 타이머 WebSocket 콜백 호출 - 프로젝트: {project_name}")
+        print(f"⏰ 전송 데이터: {timer_update_data}")
+        
         # 프로젝트 룸으로 전송
-        socketio.emit('timer_update', timer_update_data, room=f'project_{project_name}')
+        project_room = f'project_{project_name}'
+        socketio.emit('timer_update', timer_update_data, room=project_room)
+        print(f"⏰ 프로젝트 룸 전송 완료: {project_room}")
         
         # 오버레이 페이지를 위해 모든 사용자의 개별 룸으로도 전송
         project = get_project_by_name(project_name)
         if project:
             permissions = ProjectPermission.query.filter_by(project_id=project.id).all()
+            print(f"⏰ 사용자 권한 개수: {len(permissions)}")
             for permission in permissions:
                 user_room = f'user_{permission.user_id}'
                 socketio.emit('timer_update', timer_update_data, room=user_room)
+                print(f"⏰ 사용자 룸 전송 완료: {user_room}")
+        else:
+            print(f"⏰ 프로젝트를 찾을 수 없음: {project_name}")
     except Exception as e:
         print(f"타이머 업데이트 WebSocket 전송 오류: {e}")
 

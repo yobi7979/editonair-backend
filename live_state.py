@@ -60,6 +60,7 @@ class LiveStateManager:
                                 if state.get('is_running', False)}
                 
                 if running_timers and self.websocket_update_callback:
+                    print(f"⏰ 실행 중인 타이머 개수: {len(running_timers)}")
                     for obj_id, timer_state in running_timers.items():
                         project_name = timer_state.get('project_name')
                         time_format = timer_state.get('time_format', 'MM:SS')
@@ -67,6 +68,7 @@ class LiveStateManager:
                         if project_name:
                             # 타이머 상태 업데이트
                             updated_state = self.get_timer_state(obj_id, time_format)
+                            print(f"⏰ 타이머 업데이트 - 객체 ID: {obj_id}, 시간: {updated_state['current_time']}")
                             
                             # 라이브 상태 업데이트
                             self.update_object_property(project_name, obj_id, 'content', updated_state['current_time'])
@@ -81,6 +83,7 @@ class LiveStateManager:
                             
                             # 콜백 함수를 통해 WebSocket 업데이트 전송
                             self.websocket_update_callback(timer_update_data, project_name)
+                            print(f"⏰ 타이머 WebSocket 전송 완료 - 객체 ID: {obj_id}")
                 
                 # 1초마다 업데이트
                 time.sleep(1)
