@@ -1046,12 +1046,52 @@
         
         // 타이머 표시 업데이트
         function updateTimerDisplay(objectId, formattedTime) {
+            console.log(`⏰ 타이머 표시 업데이트 시작: ${objectId} = ${formattedTime}`);
+            
             const element = motionManager.objects.get(objectId);
             if (element) {
-                const textElement = element.querySelector('.timer-text, .text-content');
+                console.log(`🔍 타이머 객체 요소 찾음: ${objectId}`);
+                
+                // SVG text 요소 찾기 (타이머 객체용)
+                const textElement = element.querySelector('text');
                 if (textElement) {
+                    const oldText = textElement.textContent;
                     textElement.textContent = formattedTime;
+                    console.log(`✅ 타이머 업데이트 완료: ${objectId} = ${oldText} → ${formattedTime}`);
+                } else {
+                    console.log(`🔍 직접 text 요소를 찾을 수 없음, SVG 내부 확인`);
+                    
+                    // 다른 방법으로 텍스트 요소 찾기 시도
+                    const svgElement = element.querySelector('svg');
+                    if (svgElement) {
+                        console.log(`🔍 SVG 요소 찾음`);
+                        const svgTextElement = svgElement.querySelector('text');
+                        if (svgTextElement) {
+                            const oldText = svgTextElement.textContent;
+                            svgTextElement.textContent = formattedTime;
+                            console.log(`✅ SVG 타이머 업데이트 완료: ${objectId} = ${oldText} → ${formattedTime}`);
+                        } else {
+                            console.warn(`❌ SVG 내 텍스트 요소를 찾을 수 없음: ${objectId}`);
+                            // SVG 내부의 모든 요소 확인
+                            const allSvgElements = svgElement.querySelectorAll('*');
+                            console.log(`🔍 SVG 내 모든 요소: ${allSvgElements.length}개`);
+                            allSvgElements.forEach((el, index) => {
+                                console.log(`  - 요소 ${index + 1}: ${el.tagName}, textContent="${el.textContent}"`);
+                            });
+                        }
+                    } else {
+                        console.warn(`❌ 타이머 텍스트 요소를 찾을 수 없음: ${objectId}`);
+                        // 객체 내부의 모든 요소 확인
+                        const allElements = element.querySelectorAll('*');
+                        console.log(`🔍 객체 내 모든 요소: ${allElements.length}개`);
+                        allElements.forEach((el, index) => {
+                            console.log(`  - 요소 ${index + 1}: ${el.tagName}, textContent="${el.textContent}"`);
+                        });
+                    }
                 }
+            } else {
+                console.warn(`❌ 타이머 객체 요소를 찾을 수 없음: ${objectId}`);
+                console.log(`🔍 motionManager.objects에 있는 모든 객체:`, Array.from(motionManager.objects.keys()));
             }
         }
         
