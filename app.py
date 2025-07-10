@@ -3999,7 +3999,7 @@ def scene_live_off(scene_id):
 @app.route('/api/live/objects/<int:object_id>/timer/<action>', methods=['POST'])
 @jwt_required()
 def control_timer(object_id, action):
-    """타이머 제어 (start/stop/reset) - 채널별"""
+    """타이머 제어 (start/stop/reset) - 단순화된 시스템"""
     try:
         data = request.get_json()
         project_name = data.get('project_name')
@@ -4034,37 +4034,39 @@ def control_timer(object_id, action):
         # 객체의 시간 형식 속성 가져오기
         time_format = properties.get('timeFormat', 'MM:SS')
         
-        # 타이머 제어 (새로운 서버 중심 시스템)
-        timer_result = None
-        if action == 'start':
-            timer_result = live_state_manager.start_timer(object_id, project_name, time_format, channel_id)
-        elif action == 'stop':
-            timer_result = live_state_manager.stop_timer(object_id, project_name, channel_id)
-        elif action == 'reset':
-            timer_result = live_state_manager.reset_timer(object_id, project_name, channel_id)
+        # 단순한 타이머 제어 - 클라이언트에 명령만 전송
+        if action in ['start', 'stop', 'reset']:
+            # WebSocket으로 타이머 제어 명령 전송
+            timer_control_data = {
+                'object_id': object_id,
+                'action': action,
+                'time_format': time_format,
+                'channel_id': channel_id,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            # 프로젝트 룸으로 전송
+            project_room = f'project_{project_name}'
+            socketio.emit('timer_control', timer_control_data, room=project_room)
+            
+            # 오버레이 페이지를 위해 모든 사용자의 개별 룸으로도 전송
+            project = get_project_by_name(project_name)
+            if project:
+                permissions = ProjectPermission.query.filter_by(project_id=project.id).all()
+                for permission in permissions:
+                    user_room = f'user_{permission.user_id}'
+                    socketio.emit('timer_control', timer_control_data, room=user_room)
+            
+            print(f"⏰ 타이머 제어 명령 전송: {action} - 객체 ID: {object_id}")
+            
+            return jsonify({
+                'message': f'타이머 {action} 명령 전송 완료',
+                'object_id': object_id,
+                'action': action,
+                'time_format': time_format
+            })
         else:
             return jsonify({'error': '유효하지 않은 액션입니다.'}), 400
-        
-        print(f"⏰ 타이머 제어 - 객체 ID: {object_id}, 액션: {action}, 시간 형식: {time_format}, 채널: {channel_id}")
-        print(f"⏰ 타이머 제어 결과: {timer_result}")
-        
-        # 현재 타이머 상태 조회
-        timer_state = live_state_manager.get_timer_state(object_id, time_format, project_name, channel_id)
-        print(f"⏰ 타이머 상태 조회 결과: {timer_state}")
-        
-        # 라이브 상태에도 업데이트
-        if 'current_time' in timer_state:
-            live_state_manager.update_object_property(project_name, object_id, 'content', timer_state['current_time'], channel_id)
-        
-        # WebSocket 이벤트는 live_state_manager에서 자동으로 전송됨
-        # 여기서는 추가 전송하지 않음
-        
-        return jsonify({
-            'message': f'타이머 {action} 완료',
-            'object_id': object_id,
-            'timer_state': timer_state,
-            **timer_result  # 타이머 제어 결과 데이터 포함
-        })
         
     except Exception as e:
         app.logger.error(f'타이머 제어 오류: {str(e)}')
@@ -4304,31 +4306,13 @@ def update_shape_live(object_id):
 
 # --- Main Entry Point ---
 
-# WebSocket 업데이트 콜백 함수 설정 (새로운 서버 중심 시스템)
+# WebSocket 업데이트 콜백 함수 설정 (단순화)
 def websocket_timer_update_callback(timer_update_data, project_name):
-    """타이머 업데이트를 WebSocket으로 전송하는 콜백 함수"""
-    try:
-        print(f"⏰ 타이머 WebSocket 콜백 호출 - 프로젝트: {project_name}")
-        print(f"⏰ 전송 데이터: {timer_update_data}")
-        
-        # 프로젝트 룸으로 전송 (컨트롤 패널용)
-        project_room = f'project_{project_name}'
-        socketio.emit('timer_update', timer_update_data, room=project_room)
-        print(f"⏰ 프로젝트 룸 전송 완료: {project_room}")
-        
-        # 오버레이 페이지를 위해 모든 사용자의 개별 룸으로도 전송
-        project = get_project_by_name(project_name)
-        if project:
-            permissions = ProjectPermission.query.filter_by(project_id=project.id).all()
-            print(f"⏰ 사용자 권한 개수: {len(permissions)}")
-            for permission in permissions:
-                user_room = f'user_{permission.user_id}'
-                socketio.emit('timer_update', timer_update_data, room=user_room)
-                print(f"⏰ 사용자 룸 전송 완료: {user_room}")
-        else:
-            print(f"⏰ 프로젝트를 찾을 수 없음: {project_name}")
-    except Exception as e:
-        print(f"타이머 업데이트 WebSocket 전송 오류: {e}")
+    """타이머 업데이트를 WebSocket으로 전송하는 콜백 함수 (단순화)"""
+    # 복잡한 서버 측 타이머 업데이트는 비활성화
+    # 클라이언트 측에서 직접 타이머를 관리하도록 변경
+    print(f"⏰ 타이머 WebSocket 콜백 비활성화 (클라이언트 중심 시스템)")
+    pass
 
 # --- Canvas Preset API Endpoints ---
 

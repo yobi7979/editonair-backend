@@ -780,7 +780,7 @@
             }
         });
 
-        // 타이머 이벤트 핸들러 (서버 중심 시스템)
+        // 타이머 이벤트 핸들러 (단순화된 시스템)
         socket.on('timer_update', (data) => {
             console.log('⏰ Timer event received:', data);
             
@@ -797,227 +797,113 @@
             }
         });
 
-
-
-        // 이미지 로딩 완료 대기 함수 (캐시 우선 확인)
-        async function waitForSceneImagesReady(sceneData) {
-            const imageObjects = sceneData.objects.filter(obj => obj.type === 'image');
+        // 단순한 타이머 관리 시스템
+        const timerManager = {
+            timers: new Map(),
             
-            if (imageObjects.length === 0) {
-                console.log('📷 씬에 이미지가 없음 - 즉시 진행');
-                return;
-            }
-            
-            console.log(`📷 ${imageObjects.length}개 이미지 준비 상태 확인`);
-            
-            // 이미 프리로딩된 이미지들 필터링
-            const cachedImages = imageObjects.filter(obj => isImageCached(obj.properties.src));
-            const uncachedImages = imageObjects.filter(obj => !isImageCached(obj.properties.src));
-            
-            console.log(`✅ 이미 캐시된 이미지: ${cachedImages.length}개`);
-            console.log(`⏳ 아직 로딩 필요한 이미지: ${uncachedImages.length}개`);
-            
-            // 캐시되지 않은 이미지들만 로딩 대기
-            if (uncachedImages.length === 0) {
-                console.log('🚀 모든 이미지가 이미 캐시됨 - 즉시 진행');
-                return;
-            }
-            
-            const imagePromises = uncachedImages.map((obj, index) => {
-                return new Promise((resolve) => {
-                    const img = new Image();
-                    const src = obj.properties.src;
-                    
-                    // 한번 더 캐시 확인 (프리로딩이 완료되었을 수 있음)
-                    if (isImageCached(src)) {
-                        console.log(`✅ 이미지 캐시 확인됨: ${src}`);
-                        resolve();
-                        return;
-                    }
-                    
-                    const timeout = setTimeout(() => {
-                        console.warn(`⏰ 이미지 로딩 타임아웃: ${src}`);
-                        resolve(); // 타임아웃되어도 계속 진행
-                    }, 1000); // 캐시되지 않은 이미지는 1초만 대기 (이미 대부분 프리로딩됨)
-                    
-                    img.onload = () => {
-                        clearTimeout(timeout);
-                        console.log(`✅ 이미지 로딩 완료 (${index + 1}/${uncachedImages.length}): ${src}`);
-                        preloadedImages.add(src); // 새로 로딩된 이미지도 캐시에 추가
-                        resolve();
-                    };
-                    
-                    img.onerror = () => {
-                        clearTimeout(timeout);
-                        console.warn(`❌ 이미지 로딩 실패: ${src}`);
-                        resolve(); // 실패해도 계속 진행
-                    };
-                    
-                    img.src = src;
+            // 타이머 시작
+            startTimer(objectId, timeFormat = 'MM:SS') {
+                console.log(`⏰ 타이머 시작: ${objectId}`);
+                this.timers.set(objectId, {
+                    isRunning: true,
+                    startTime: Date.now(),
+                    elapsed: 0,
+                    timeFormat: timeFormat,
+                    interval: setInterval(() => {
+                        this.updateTimer(objectId);
+                    }, 1000)
                 });
-            });
+                this.updateTimer(objectId);
+            },
             
-            // 캐시되지 않은 이미지들 로딩 완료 대기 (최대 2초)
-            const loadingPromise = Promise.all(imagePromises);
-            const timeoutPromise = new Promise(resolve => 
-                setTimeout(() => {
-                    console.warn('⏰ 잔여 이미지 로딩 타임아웃 - 강제 진행');
-                    resolve();
-                }, 2000)
-            );
-            
-            await Promise.race([loadingPromise, timeoutPromise]);
-            console.log('🎯 모든 이미지 준비 처리 완료');
-        }
-        
-
-
-        // 씬 변경 이벤트 수신 (개선된 버전)
-        socket.on('scene_change', async (data) => {
-            console.log('🔄 Scene change event received:', data);
-            console.log('🌐 Loading scene from API:', data.scene_id);
-            
-            try {
-                // 1단계: 새로운 씬 데이터 가져오기
-                const response = await fetch(`/api/overlay/scenes/${data.scene_id}`);
-                const newScene = await response.json();
-                console.log('📥 New scene loaded from API:', newScene);
-                
-                // 2단계: 해당 씬의 모든 이미지 로딩 완료 대기 (백그라운드에서 조용히 처리)
-                await waitForSceneImagesReady(newScene);
-                
-                // 3단계: 로딩 완료 후 인모션 시작
-                console.log('🚀 이미지 준비 완료 - 씬 전환 시작');
-                
-                currentScene = newScene;
-                motionManager.updateScene(newScene, false); // 이제 안전하게 인모션 실행
-                console.log('✅ 씬 전환 완료');
-                
-                // 씬 전환 후 타이머 상태 동기화
-                setTimeout(() => {
-                    syncTimerStatesFromServer();
-                }, 500);
-                
-            } catch (error) {
-                console.error('❌ 씬 변경 중 오류:', error);
-                
-                // 오류 발생 시에도 기본적인 씬 전환은 시도
-                try {
-                    const response = await fetch(`/api/overlay/scenes/${data.scene_id}`);
-                    const newScene = await response.json();
-                    currentScene = newScene;
-                    motionManager.updateScene(newScene, true); // skipInMotion = true
-                    console.log('⚠️ 오류 복구 - 기본 씬 전환 완료');
-                } catch (fallbackError) {
-                    console.error('💥 씬 전환 완전 실패:', fallbackError);
-                }
-            }
-        });
-
-        // 씬 아웃 이벤트 수신
-        socket.on('scene_out', async (data) => {
-            console.log('🎭 Scene out event received:', data);
-            
-            if (currentScene && currentScene.objects && currentScene.objects.length > 0) {
-                console.log('🎬 Applying out motions to current scene objects...');
-                
-                try {
-                    // 아웃 모션 실행 및 완료 대기
-                    await motionManager.waitForAllOutMotions();
-                    console.log('✅ All out motions completed');
-                } catch (error) {
-                    console.error('❌ Error during out motions:', error);
-                }
-            }
-            
-            // 아웃 모션 완료 후 더미 씬으로 전환
-            console.log('🔄 Loading dummy scene after out motions...');
-            
-            try {
-                const response = await fetch('/api/dummy-scene');
-                const dummyScene = await response.json();
-                console.log('📥 Dummy scene loaded:', dummyScene);
-                
-                currentScene = dummyScene;
-                motionManager.updateScene(dummyScene, true);
-                console.log('✅ Dummy scene applied successfully');
-            } catch (error) {
-                console.error('❌ Error loading dummy scene:', error);
-            }
-        });
-
-        // 타이머 상태 관리 (서버 중심)
-        const timerStates = new Map();
-        
-        // 타이머 표시 업데이트
-        function updateTimerDisplay(objectId, formattedTime) {
-            console.log(`⏰ 타이머 표시 업데이트 시작: ${objectId} = ${formattedTime}`);
-            
-            const element = motionManager.objects.get(objectId);
-            if (element) {
-                console.log(`🔍 타이머 객체 요소 찾음: ${objectId}`);
-                
-                // SVG text 요소 찾기 (타이머 객체용)
-                const textElement = element.querySelector('text');
-                if (textElement) {
-                    const oldText = textElement.textContent;
-                    textElement.textContent = formattedTime;
-                    console.log(`✅ 타이머 업데이트 완료: ${objectId} = ${oldText} → ${formattedTime}`);
-                } else {
-                    console.log(`🔍 직접 text 요소를 찾을 수 없음, SVG 내부 확인`);
-                    
-                    // 다른 방법으로 텍스트 요소 찾기 시도
-                    const svgElement = element.querySelector('svg');
-                    if (svgElement) {
-                        console.log(`🔍 SVG 요소 찾음`);
-                        const svgTextElement = svgElement.querySelector('text');
-                        if (svgTextElement) {
-                            const oldText = svgTextElement.textContent;
-                            svgTextElement.textContent = formattedTime;
-                            console.log(`✅ SVG 타이머 업데이트 완료: ${objectId} = ${oldText} → ${formattedTime}`);
-                        } else {
-                            console.warn(`❌ SVG 내 텍스트 요소를 찾을 수 없음: ${objectId}`);
-                            // SVG 내부의 모든 요소 확인
-                            const allSvgElements = svgElement.querySelectorAll('*');
-                            console.log(`🔍 SVG 내 모든 요소: ${allSvgElements.length}개`);
-                            allSvgElements.forEach((el, index) => {
-                                console.log(`  - 요소 ${index + 1}: ${el.tagName}, textContent="${el.textContent}"`);
-                            });
-                        }
-                    } else {
-                        console.warn(`❌ 타이머 텍스트 요소를 찾을 수 없음: ${objectId}`);
-                        // 객체 내부의 모든 요소 확인
-                        const allElements = element.querySelectorAll('*');
-                        console.log(`🔍 객체 내 모든 요소: ${allElements.length}개`);
-                        allElements.forEach((el, index) => {
-                            console.log(`  - 요소 ${index + 1}: ${el.tagName}, textContent="${el.textContent}"`);
-                        });
+            // 타이머 정지
+            stopTimer(objectId) {
+                console.log(`⏰ 타이머 정지: ${objectId}`);
+                const timer = this.timers.get(objectId);
+                if (timer) {
+                    timer.isRunning = false;
+                    if (timer.interval) {
+                        clearInterval(timer.interval);
                     }
+                    this.updateTimer(objectId);
                 }
-            } else {
-                console.warn(`❌ 타이머 객체 요소를 찾을 수 없음: ${objectId}`);
-                console.log(`🔍 motionManager.objects에 있는 모든 객체:`, Array.from(motionManager.objects.keys()));
+            },
+            
+            // 타이머 리셋
+            resetTimer(objectId) {
+                console.log(`⏰ 타이머 리셋: ${objectId}`);
+                const timer = this.timers.get(objectId);
+                if (timer) {
+                    timer.elapsed = 0;
+                    timer.startTime = Date.now();
+                    this.updateTimer(objectId);
+                }
+            },
+            
+            // 타이머 업데이트
+            updateTimer(objectId) {
+                const timer = this.timers.get(objectId);
+                if (!timer) return;
+                
+                if (timer.isRunning) {
+                    const now = Date.now();
+                    timer.elapsed = (now - timer.startTime) / 1000;
+                }
+                
+                const formattedTime = this.formatTime(timer.elapsed, timer.timeFormat);
+                updateTimerDisplay(objectId, formattedTime);
+                
+                // 서버에 상태 전송
+                socket.emit('timer_state_update', {
+                    object_id: objectId,
+                    current_time: formattedTime,
+                    elapsed: timer.elapsed,
+                    is_running: timer.isRunning
+                });
+            },
+            
+            // 시간 포맷팅
+            formatTime(elapsedSeconds, timeFormat = 'MM:SS') {
+                if (timeFormat === 'SS') {
+                    return `${Math.floor(elapsedSeconds).toString().padStart(2, '0')}`;
+                } else if (timeFormat === 'HH:MM:SS') {
+                    const hours = Math.floor(elapsedSeconds / 3600);
+                    const minutes = Math.floor((elapsedSeconds % 3600) / 60);
+                    const seconds = Math.floor(elapsedSeconds % 60);
+                    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                } else {
+                    // 기본 MM:SS 형식
+                    const minutes = Math.floor(elapsedSeconds / 60);
+                    const seconds = Math.floor(elapsedSeconds % 60);
+                    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                }
+            },
+            
+            // 타이머 제어 명령 수신
+            handleTimerCommand(objectId, action, timeFormat = 'MM:SS') {
+                console.log(`⏰ 타이머 명령 수신: ${objectId} ${action}`);
+                
+                switch (action) {
+                    case 'start':
+                        this.startTimer(objectId, timeFormat);
+                        break;
+                    case 'stop':
+                        this.stopTimer(objectId);
+                        break;
+                    case 'reset':
+                        this.resetTimer(objectId);
+                        break;
+                }
             }
-        }
-        
-        // 시간 포맷팅 함수
-        function formatTime(elapsedSeconds, timeFormat = 'MM:SS') {
-            if (timeFormat === 'SS') {
-                return `${Math.floor(elapsedSeconds).toString().padStart(2, '0')}`;
-            } else if (timeFormat === 'HH:MM:SS') {
-                const hours = Math.floor(elapsedSeconds / 3600);
-                const minutes = Math.floor((elapsedSeconds % 3600) / 60);
-                const seconds = Math.floor(elapsedSeconds % 60);
-                return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-            } else {
-                // 기본 MM:SS 형식
-                const minutes = Math.floor(elapsedSeconds / 60);
-                const seconds = Math.floor(elapsedSeconds % 60);
-                return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-            }
-        }
-        
-        // 서버에서 타이머 상태를 가져와서 동기화하는 함수 (서버 중심)
+        };
+
+        // 타이머 제어 명령 수신
+        socket.on('timer_control', (data) => {
+            console.log('⏰ 타이머 제어 명령 수신:', data);
+            timerManager.handleTimerCommand(data.object_id, data.action, data.time_format);
+        });
+
+        // 타이머 상태 동기화 (단순화)
         async function syncTimerStatesFromServer() {
             console.log('🔄 서버에서 타이머 상태 동기화 시작');
             
@@ -1046,7 +932,15 @@
                         console.log(`⏰ 타이머 ${timerObj.id} 서버 상태:`, timerData);
                         
                         if (timerData.timer_state) {
-                            updateTimerDisplay(timerObj.id, timerData.timer_state.current_time || '00:00');
+                            const currentTime = timerData.timer_state.current_time || '00:00';
+                            updateTimerDisplay(timerObj.id, currentTime);
+                            
+                            // 서버 상태에 따라 타이머 매니저 상태 동기화
+                            if (timerData.timer_state.is_running) {
+                                // 서버에서 실행 중이면 클라이언트에서도 시작
+                                const timeFormat = timerObj.properties?.timeFormat || 'MM:SS';
+                                timerManager.handleTimerCommand(timerObj.id, 'start', timeFormat);
+                            }
                         }
                     }
                 } catch (error) {
@@ -1056,7 +950,7 @@
             
             console.log('✅ 타이머 상태 동기화 완료');
         }
-        
+
         // 연결 상태를 수동으로 체크하는 함수를 전역으로 노출
         window.checkWebSocketStatus = checkConnectionStatus;
         
@@ -1584,6 +1478,159 @@
                 element.style.setProperty('--rotation', '0deg');
             }
         }
+
+        // 타이머 표시 업데이트 함수
+        function updateTimerDisplay(objectId, formattedTime) {
+            console.log(`⏰ 타이머 표시 업데이트 시작: ${objectId} = ${formattedTime}`);
+            
+            const element = motionManager.objects.get(objectId);
+            if (element) {
+                console.log(`🔍 타이머 객체 요소 찾음: ${objectId}`);
+                
+                // SVG text 요소 찾기 (타이머 객체용)
+                const textElement = element.querySelector('text');
+                if (textElement) {
+                    const oldText = textElement.textContent;
+                    textElement.textContent = formattedTime;
+                    console.log(`✅ 타이머 업데이트 완료: ${objectId} = ${oldText} → ${formattedTime}`);
+                } else {
+                    console.log(`🔍 직접 text 요소를 찾을 수 없음, SVG 내부 확인`);
+                    
+                    // 다른 방법으로 텍스트 요소 찾기 시도
+                    const svgElement = element.querySelector('svg');
+                    if (svgElement) {
+                        console.log(`🔍 SVG 요소 찾음`);
+                        const svgTextElement = svgElement.querySelector('text');
+                        if (svgTextElement) {
+                            const oldText = svgTextElement.textContent;
+                            svgTextElement.textContent = formattedTime;
+                            console.log(`✅ SVG 타이머 업데이트 완료: ${objectId} = ${oldText} → ${formattedTime}`);
+                        } else {
+                            console.warn(`❌ SVG 내 텍스트 요소를 찾을 수 없음: ${objectId}`);
+                        }
+                    } else {
+                        console.warn(`❌ 타이머 텍스트 요소를 찾을 수 없음: ${objectId}`);
+                    }
+                }
+            } else {
+                console.warn(`❌ 타이머 객체 요소를 찾을 수 없음: ${objectId}`);
+            }
+        }
+
+        // 이미지 로딩 완료 대기 함수 (단순화)
+        async function waitForSceneImagesReady(sceneData) {
+            const imageObjects = sceneData.objects.filter(obj => obj.type === 'image');
+            
+            if (imageObjects.length === 0) {
+                console.log('📷 씬에 이미지가 없음 - 즉시 진행');
+                return;
+            }
+            
+            console.log(`📷 ${imageObjects.length}개 이미지 준비 상태 확인`);
+            
+            // 이미 프리로딩된 이미지들 필터링
+            const cachedImages = imageObjects.filter(obj => isImageCached(obj.properties.src));
+            const uncachedImages = imageObjects.filter(obj => !isImageCached(obj.properties.src));
+            
+            console.log(`✅ 이미 캐시된 이미지: ${cachedImages.length}개`);
+            console.log(`⏳ 아직 로딩 필요한 이미지: ${uncachedImages.length}개`);
+            
+            // 캐시되지 않은 이미지들만 로딩 대기
+            if (uncachedImages.length === 0) {
+                console.log('🚀 모든 이미지가 이미 캐시됨 - 즉시 진행');
+                return;
+            }
+            
+            const imagePromises = uncachedImages.map((obj, index) => {
+                return new Promise((resolve) => {
+                    const img = new Image();
+                    const src = obj.properties.src;
+                    
+                    const timeout = setTimeout(() => {
+                        console.warn(`⏰ 이미지 로딩 타임아웃: ${src}`);
+                        resolve(); // 타임아웃되어도 계속 진행
+                    }, 1000);
+                    
+                    img.onload = () => {
+                        clearTimeout(timeout);
+                        console.log(`✅ 이미지 로딩 완료 (${index + 1}/${uncachedImages.length}): ${src}`);
+                        preloadedImages.add(src);
+                        resolve();
+                    };
+                    
+                    img.onerror = () => {
+                        clearTimeout(timeout);
+                        console.warn(`❌ 이미지 로딩 실패: ${src}`);
+                        resolve();
+                    };
+                    
+                    img.src = src;
+                });
+            });
+            
+            // 캐시되지 않은 이미지들 로딩 완료 대기 (최대 2초)
+            const loadingPromise = Promise.all(imagePromises);
+            const timeoutPromise = new Promise(resolve => 
+                setTimeout(() => {
+                    console.warn('⏰ 잔여 이미지 로딩 타임아웃 - 강제 진행');
+                    resolve();
+                }, 2000)
+            );
+            
+            await Promise.race([loadingPromise, timeoutPromise]);
+            console.log('🎯 모든 이미지 준비 처리 완료');
+        }
+
+        // 씬 변경 이벤트 수신 (단순화)
+        socket.on('scene_change', async (data) => {
+            console.log('🔄 Scene change event received:', data);
+            
+            try {
+                const response = await fetch(`/api/overlay/scenes/${data.scene_id}`);
+                const newScene = await response.json();
+                console.log('📥 New scene loaded from API:', newScene);
+                
+                // 이미지 로딩 대기 (백그라운드)
+                waitForSceneImagesReady(newScene);
+                
+                currentScene = newScene;
+                motionManager.updateScene(newScene, false);
+                console.log('✅ 씬 전환 완료');
+                
+                // 씬 전환 후 타이머 상태 동기화
+                setTimeout(() => {
+                    syncTimerStatesFromServer();
+                }, 500);
+                
+            } catch (error) {
+                console.error('❌ 씬 변경 중 오류:', error);
+            }
+        });
+
+        // 씬 아웃 이벤트 수신 (단순화)
+        socket.on('scene_out', async (data) => {
+            console.log('🎭 Scene out event received:', data);
+            
+            if (currentScene && currentScene.objects && currentScene.objects.length > 0) {
+                try {
+                    await motionManager.waitForAllOutMotions();
+                    console.log('✅ All out motions completed');
+                } catch (error) {
+                    console.error('❌ Error during out motions:', error);
+                }
+            }
+            
+            // 더미 씬으로 전환
+            try {
+                const response = await fetch('/api/dummy-scene');
+                const dummyScene = await response.json();
+                currentScene = dummyScene;
+                motionManager.updateScene(dummyScene, true);
+                console.log('✅ Dummy scene applied successfully');
+            } catch (error) {
+                console.error('❌ Error loading dummy scene:', error);
+            }
+        });
     </script>
 </body>
 </html> 
