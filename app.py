@@ -3998,6 +3998,11 @@ def control_timer(object_id, action):
         if not obj or obj.type != 'timer':
             return jsonify({'error': '타이머 객체를 찾을 수 없습니다.'}), 404
         
+        # 객체의 시간 형식 속성 가져오기
+        import json
+        obj_properties = json.loads(obj.properties) if obj.properties else {}
+        time_format = obj_properties.get('timeFormat', 'MM:SS')
+        
         # 타이머 제어
         if action == 'start':
             live_state_manager.start_timer(object_id, project_name, time_format)
@@ -4007,11 +4012,6 @@ def control_timer(object_id, action):
             live_state_manager.reset_timer(object_id)
         else:
             return jsonify({'error': '유효하지 않은 액션입니다.'}), 400
-        
-        # 객체의 시간 형식 속성 가져오기
-        import json
-        obj_properties = json.loads(obj.properties) if obj.properties else {}
-        time_format = obj_properties.get('timeFormat', 'MM:SS')
         
         print(f"⏰ 타이머 제어 - 객체 ID: {object_id}, 액션: {action}, 시간 형식: {time_format}")
         
