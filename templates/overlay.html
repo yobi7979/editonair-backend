@@ -712,31 +712,58 @@
             if (oldElement) {
                 // 기존 요소의 내용만 업데이트
                 if (data.property === 'content') {
-                    // 텍스트 내용 업데이트
-                    const textElement = oldElement.querySelector('.timer-text, .text-content');
-                    if (textElement) {
-                        textElement.textContent = data.value;
+                    // 텍스트 내용 업데이트 - SVG 내부의 text 요소 찾기
+                    const svgElement = oldElement.querySelector('svg');
+                    if (svgElement) {
+                        const textElement = svgElement.querySelector('text');
+                        if (textElement) {
+                            const oldText = textElement.textContent;
+                            textElement.textContent = data.value;
+                            console.log(`✅ 텍스트 내용 업데이트 완료: ${data.object_id} = ${oldText} → ${data.value}`);
+                        } else {
+                            console.warn(`❌ SVG 내 텍스트 요소를 찾을 수 없음: ${data.object_id}`);
+                        }
+                    } else {
+                        console.warn(`❌ 텍스트 객체의 SVG 요소를 찾을 수 없음: ${data.object_id}`);
                     }
                 } else if (data.property === 'src') {
                     // 이미지 src 업데이트
                     const imgElement = oldElement.querySelector('img');
                     if (imgElement) {
+                        const oldSrc = imgElement.src;
                         imgElement.src = data.value;
+                        console.log(`✅ 이미지 src 업데이트 완료: ${data.object_id} = ${oldSrc} → ${data.value}`);
+                    } else {
+                        console.warn(`❌ 이미지 요소를 찾을 수 없음: ${data.object_id}`);
                     }
-                } else if (data.property === 'color') {
-                    // 도형 컬러 업데이트
-                    oldElement.style.backgroundColor = data.value;
+                } else if (data.property === 'color' || data.property === 'fill') {
+                    // 도형 컬러 업데이트 - SVG 내부의 도형 요소의 fill 속성 업데이트
+                    console.log(`🎨 도형 컬러 업데이트 시작: ${data.object_id} = ${data.value}`);
+                    
+                    const svgElement = oldElement.querySelector('svg');
+                    if (svgElement) {
+                        const shapeElements = svgElement.querySelectorAll('polygon, ellipse, path, rect, circle');
+                        console.log(`🔍 SVG 내 찾은 도형 요소: ${shapeElements.length}개`);
+                        
+                        if (shapeElements.length > 0) {
+                            shapeElements.forEach((shapeElement, index) => {
+                                const oldFill = shapeElement.getAttribute('fill');
+                                shapeElement.setAttribute('fill', data.value);
+                                console.log(`✅ 도형 요소 ${index + 1} 업데이트: ${oldFill} → ${data.value}`);
+                            });
+                            console.log(`✅ 도형 컬러 업데이트 완료: ${data.object_id} = ${data.value} (${shapeElements.length}개 요소)`);
+                        } else {
+                            console.warn(`❌ SVG 내 도형 요소를 찾을 수 없음: ${data.object_id}`);
+                        }
+                    } else {
+                        console.warn(`❌ 도형 객체의 SVG 요소를 찾을 수 없음: ${data.object_id}`);
+                    }
                 }
                 console.log(`✅ 객체 내용 업데이트 완료: ${data.object_id}`);
             } else {
-                // 기존 요소가 없으면 새로 생성
-                const newElement = createObjectElement(currentScene.objects[objIndex]);
-                if (newElement) {
-                    motionManager.container.appendChild(newElement);
-                    motionManager.objects.set(data.object_id, newElement);
-                    newElement.dataset.inMotionCompleted = 'true';
-                    console.log(`✅ 새 객체 생성 완료: ${data.object_id}`);
-                }
+                // 기존 요소가 없으면 현재 씬을 다시 렌더링
+                console.log(`⚠️ 객체 요소를 찾을 수 없음: ${data.object_id}, 씬 다시 렌더링`);
+                motionManager.updateScene(currentScene, true); // skipInMotion = true로 다시 렌더링
             }
         });
 
