@@ -72,8 +72,12 @@ class LiveStateManager:
                                 # 시간 포맷팅
                                 current_time_str = self._format_time(elapsed, timer_state.get('time_format', 'MM:SS'))
                                 
-                                # 타이머 상태 업데이트
-                                self.timer_states[project_name][channel_id][object_id]['elapsed'] = elapsed
+                                # 타이머 상태 업데이트 (start_time을 현재 시간으로 갱신하여 누적 방지)
+                                self.timer_states[project_name][channel_id][object_id] = {
+                                    **timer_state,
+                                    'elapsed': elapsed,
+                                    'start_time': current_time  # start_time을 현재 시간으로 갱신
+                                }
                                 
                                 running_timers.append({
                                     'object_id': object_id,
@@ -84,6 +88,7 @@ class LiveStateManager:
                         
                         # 실행 중인 타이머가 있으면 WebSocket으로 전송
                         if running_timers and self.websocket_update_callback:
+                            print(f"⏰ 타이머 업데이트 전송 - {len(running_timers)}개 타이머")
                             for timer_info in running_timers:
                                 update_data = {
                                     'object_id': timer_info['object_id'],
@@ -95,6 +100,7 @@ class LiveStateManager:
                                     'timestamp': datetime.now().isoformat()
                                 }
                                 self.websocket_update_callback(update_data, project_name)
+                                print(f"⏰ 타이머 {timer_info['object_id']} 업데이트: {timer_info['current_time']} (경과: {timer_info['elapsed']:.1f}초)")
                 
                 # 1초 대기
                 time.sleep(1)
