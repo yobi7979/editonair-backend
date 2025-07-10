@@ -801,9 +801,30 @@
         const timerManager = {
             timers: new Map(),
             
-            // 타이머 시작
+            // 타이머 시작 (상태 유지)
             startTimer(objectId, timeFormat = 'MM:SS') {
                 console.log(`⏰ 타이머 시작: ${objectId}`);
+                
+                // 기존 타이머가 있는지 확인
+                const existingTimer = this.timers.get(objectId);
+                if (existingTimer) {
+                    if (existingTimer.isRunning) {
+                        console.log(`⏰ 타이머 ${objectId} 이미 실행 중 - 상태 유지`);
+                        return; // 이미 실행 중이면 아무것도 하지 않음
+                    } else {
+                        // 정지된 타이머가 있으면 기존 경과 시간 유지하고 재시작
+                        console.log(`⏰ 타이머 ${objectId} 기존 경과 시간 유지하고 재시작 (elapsed: ${existingTimer.elapsed}s)`);
+                        existingTimer.isRunning = true;
+                        existingTimer.startTime = Date.now() - (existingTimer.elapsed * 1000);
+                        existingTimer.interval = setInterval(() => {
+                            this.updateTimer(objectId);
+                        }, 1000);
+                        this.updateTimer(objectId);
+                        return;
+                    }
+                }
+                
+                // 새로운 타이머 시작
                 this.timers.set(objectId, {
                     isRunning: true,
                     startTime: Date.now(),
@@ -816,14 +837,22 @@
                 this.updateTimer(objectId);
             },
             
-            // 타이머 정지
+            // 타이머 정지 (상태 유지)
             stopTimer(objectId) {
                 console.log(`⏰ 타이머 정지: ${objectId}`);
                 const timer = this.timers.get(objectId);
                 if (timer) {
+                    // 현재 경과 시간 계산하여 저장
+                    if (timer.isRunning) {
+                        const now = Date.now();
+                        timer.elapsed = (now - timer.startTime) / 1000;
+                        console.log(`⏰ 타이머 ${objectId} 경과 시간 저장: ${timer.elapsed}s`);
+                    }
+                    
                     timer.isRunning = false;
                     if (timer.interval) {
                         clearInterval(timer.interval);
+                        timer.interval = null;
                     }
                     this.updateTimer(objectId);
                 }
@@ -896,7 +925,7 @@
                 }
             },
             
-            // 씬 변경 시 불필요한 타이머 정리
+            // 씬 변경 시 불필요한 타이머 정리 (상태 유지)
             cleanupTimers(currentSceneObjects) {
                 console.log('🧹 타이머 정리 시작');
                 
@@ -908,16 +937,18 @@
                         .forEach(obj => currentTimerIds.add(obj.id));
                 }
                 
-                // 실행 중인 타이머 중에서 현재 씬에 없는 것들 정리
+                // 실행 중인 타이머 중에서 현재 씬에 없는 것들만 정리
                 const timersToRemove = [];
                 this.timers.forEach((timer, objectId) => {
                     if (!currentTimerIds.has(objectId)) {
                         console.log(`🧹 불필요한 타이머 정리: ${objectId}`);
                         timersToRemove.push(objectId);
+                    } else {
+                        console.log(`⏰ 타이머 상태 유지: ${objectId} (elapsed: ${timer.elapsed}s, running: ${timer.isRunning})`);
                     }
                 });
                 
-                // 타이머 정리
+                // 타이머 정리 (현재 씬에 없는 것들만)
                 timersToRemove.forEach(objectId => {
                     const timer = this.timers.get(objectId);
                     if (timer && timer.interval) {
@@ -926,7 +957,7 @@
                     this.timers.delete(objectId);
                 });
                 
-                console.log(`🧹 타이머 정리 완료: ${timersToRemove.length}개 제거됨`);
+                console.log(`🧹 타이머 정리 완료: ${timersToRemove.length}개 제거됨, ${this.timers.size}개 유지됨`);
             }
         };
 
@@ -936,7 +967,7 @@
             timerManager.handleTimerCommand(data.object_id, data.action, data.time_format);
         });
 
-        // 타이머 상태 동기화 (최적화)
+        // 타이머 상태 동기화 (최적화 - 상태 유지)
         async function syncTimerStatesFromServer() {
             console.log('🔄 서버에서 타이머 상태 동기화 시작');
             
@@ -958,6 +989,13 @@
             
             for (const timerObj of timerObjects) {
                 try {
+                    // 이미 실행 중인 타이머가 있는지 확인
+                    const existingTimer = timerManager.timers.get(timerObj.id);
+                    if (existingTimer && existingTimer.isRunning) {
+                        console.log(`⏰ 타이머 ${timerObj.id} 이미 실행 중 - 상태 유지 (elapsed: ${existingTimer.elapsed}s)`);
+                        continue; // 이미 실행 중이면 서버 동기화 건너뛰기
+                    }
+                    
                     // 서버에서 타이머 상태 가져오기
                     const projectName = '{{ project.name }}';
                     const channelId = '{{ channel_id }}';
@@ -970,9 +1008,9 @@
                             const currentTime = timerData.timer_state.current_time || '00:00';
                             updateTimerDisplay(timerObj.id, currentTime);
                             
-                            // 서버 상태에 따라 타이머 매니저 상태 동기화
-                            if (timerData.timer_state.is_running) {
-                                // 서버에서 실행 중이면 클라이언트에서도 시작
+                            // 서버 상태에 따라 타이머 매니저 상태 동기화 (기존 상태가 없을 때만)
+                            if (timerData.timer_state.is_running && !existingTimer) {
+                                // 서버에서 실행 중이고 로컬에 타이머가 없으면 시작
                                 const timeFormat = timerObj.properties?.timeFormat || 'MM:SS';
                                 timerManager.handleTimerCommand(timerObj.id, 'start', timeFormat);
                             }
