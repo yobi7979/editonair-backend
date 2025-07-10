@@ -662,6 +662,14 @@
             console.error('🔄❌ WebSocket reconnection error:', error);
         });
 
+        // 룸 참여 완료 이벤트
+        socket.on('joined', (data) => {
+            console.log('🎯 Joined room event received:', data);
+            if (data.room) {
+                console.log('✅ Successfully joined room:', data.room);
+            }
+        });
+
         // 방송 시작 신호가 오면 그때부터 씬 적용
         socket.on('start_broadcast', () => {
             console.log('📺 Broadcast started');
@@ -792,31 +800,7 @@
             }
         });
 
-        // 타이머 업데이트 이벤트 핸들러
-        socket.on('timer_update', (data) => {
-            console.log('⏰ Timer update event received:', data);
-            
-            if (!currentScene) return;
-            
-            // 타이머 객체 찾기
-            const timerObj = currentScene.objects.find(obj => obj.id === data.object_id && obj.type === 'timer');
-            if (!timerObj) return;
-            
-            // 타이머 텍스트 업데이트
-            const timerElement = motionManager.objects.get(data.object_id);
-            if (timerElement) {
-                const textElement = timerElement.querySelector('text');
-                if (textElement) {
-                    textElement.textContent = data.timer_state.current_time;
-                    console.log('⏰ Timer text updated:', data.timer_state.current_time);
-                }
-            }
-            
-            // 라이브 상태에도 업데이트
-            if (data.timer_state.current_time) {
-                timerObj.properties.content = data.timer_state.current_time;
-            }
-        });
+
 
         // 이미지 로딩 완료 대기 함수 (캐시 우선 확인)
         async function waitForSceneImagesReady(sceneData) {
