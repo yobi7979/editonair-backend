@@ -780,43 +780,20 @@
             }
         });
 
-        // 타이머 이벤트 핸들러 (하이브리드 방식) - 중복 이벤트 방지
-        const timerEventDebounce = new Map(); // 중복 이벤트 방지를 위한 디바운싱
-        
+        // 타이머 이벤트 핸들러 (서버 중심 시스템)
         socket.on('timer_update', (data) => {
             console.log('⏰ Timer event received:', data);
             
             if (!currentScene) return;
             
-            // 중복 이벤트 방지: 같은 object_id와 action의 이벤트가 100ms 내에 오면 무시
-            const eventKey = `${data.object_id}_${data.action}`;
-            const now = Date.now();
-            const lastEvent = timerEventDebounce.get(eventKey);
+            const objectId = data.object_id;
+            const action = data.action;
+            const currentTime = data.current_time;
             
-            if (lastEvent && (now - lastEvent) < 100) {
-                console.log(`⚠️ 중복 타이머 이벤트 무시: ${eventKey} (${now - lastEvent}ms 간격)`);
-                return;
-            }
-            
-            timerEventDebounce.set(eventKey, now);
-            console.log(`✅ 타이머 이벤트 처리: ${eventKey}`);
-            
-            if (data.action === 'start') {
-                // 타이머 시작 - 로컬 계산 시작
-                console.log(`🚀 타이머 시작: ${data.object_id}`);
-                startLocalTimer(data.object_id, data.start_time, data.elapsed, data.time_format);
-            } else if (data.action === 'stop') {
-                // 타이머 정지 - 로컬 계산 정지
-                console.log(`⏹️ 타이머 정지: ${data.object_id}`);
-                stopLocalTimer(data.object_id, data.elapsed);
-            } else if (data.action === 'reset') {
-                // 타이머 리셋 - 로컬 계산 리셋
-                console.log(`🔄 타이머 리셋: ${data.object_id}`);
-                resetLocalTimer(data.object_id);
-            } else if (data.action === 'sync') {
-                // 타이머 동기화 - 드리프트 보정
-                console.log(`🔄 타이머 동기화: ${data.object_id}`);
-                syncLocalTimer(data.object_id, data.server_time, data.start_time, data.elapsed);
+            // 서버에서 받은 시간을 바로 UI에 반영
+            if (action === 'start' || action === 'stop' || action === 'reset' || action === 'update') {
+                console.log(`⏰ 타이머 ${action}: ${objectId} = ${currentTime}`);
+                updateTimerDisplay(objectId, currentTime);
             }
         });
 
@@ -969,127 +946,8 @@
             }
         });
 
-        // 로컬 타이머 관리 (하이브리드 방식)
-        const localTimers = new Map();
-        const timerIntervals = new Map();
-        
-        // 로컬 타이머 시작
-        function startLocalTimer(objectId, serverStartTime, elapsed, timeFormat = 'MM:SS') {
-            // 기존 interval이 있으면 정리 (중복 실행 방지)
-            const prevInterval = timerIntervals.get(objectId);
-            if (prevInterval) {
-                clearInterval(prevInterval);
-                timerIntervals.delete(objectId);
-                console.log(`🔄 기존 타이머 interval 정리: ${objectId}`);
-            }
-            
-            const localStartTime = Date.now() / 1000;
-            
-            localTimers.set(objectId, {
-                serverStartTime,
-                localStartTime,
-                elapsed: elapsed,
-                timeFormat,
-                isRunning: true
-            });
-            
-            // 즉시 현재 시간 표시
-            const formattedTime = formatTime(elapsed, timeFormat);
-            updateTimerDisplay(objectId, formattedTime);
-            
-            // 1초마다 업데이트하는 인터벌 시작
-            const interval = setInterval(() => {
-                const timer = localTimers.get(objectId);
-                if (!timer || !timer.isRunning) return;
-                
-                const currentTime = Date.now() / 1000;
-                const newElapsed = timer.elapsed + (currentTime - timer.localStartTime);
-                const formattedTime = formatTime(newElapsed, timer.timeFormat);
-                
-                // UI 업데이트
-                updateTimerDisplay(objectId, formattedTime);
-                
-                // 타이머 상태 업데이트 (localStartTime은 그대로 유지)
-                localTimers.set(objectId, {
-                    ...timer,
-                    elapsed: newElapsed
-                });
-            }, 1000);
-            
-            timerIntervals.set(objectId, interval);
-            console.log(`🚀 오버레이 로컬 타이머 시작: ${objectId}, 서버 시작: ${serverStartTime}, 경과: ${elapsed}, 로컬 시작: ${localStartTime}`);
-        }
-        
-        // 로컬 타이머 정지
-        function stopLocalTimer(objectId, finalElapsed) {
-            // 인터벌 정지
-            const interval = timerIntervals.get(objectId);
-            if (interval) {
-                clearInterval(interval);
-                timerIntervals.delete(objectId);
-            }
-            
-            // 타이머 상태 업데이트
-            const timer = localTimers.get(objectId);
-            if (timer) {
-                const formattedTime = formatTime(finalElapsed, timer.timeFormat);
-                updateTimerDisplay(objectId, formattedTime);
-                
-                localTimers.set(objectId, {
-                    ...timer,
-                    elapsed: finalElapsed,
-                    isRunning: false
-                });
-            }
-            
-            console.log(`⏹️ 오버레이 로컬 타이머 정지: ${objectId}, 최종 경과: ${finalElapsed}`);
-        }
-        
-        // 로컬 타이머 리셋
-        function resetLocalTimer(objectId) {
-            // 인터벌 정지
-            const interval = timerIntervals.get(objectId);
-            if (interval) {
-                clearInterval(interval);
-                timerIntervals.delete(objectId);
-            }
-            
-            // 타이머 상태 리셋
-            const timer = localTimers.get(objectId);
-            if (timer) {
-                updateTimerDisplay(objectId, '00:00');
-                
-                localTimers.set(objectId, {
-                    ...timer,
-                    elapsed: 0,
-                    isRunning: false
-                });
-            }
-            
-            console.log(`🔄 오버레이 로컬 타이머 리셋: ${objectId}`);
-        }
-        
-        // 로컬 타이머 동기화
-        function syncLocalTimer(objectId, serverTime, serverStartTime, serverElapsed) {
-            const timer = localTimers.get(objectId);
-            if (!timer || !timer.isRunning) return;
-            
-            const currentTime = Date.now() / 1000;
-            const correctedElapsed = serverElapsed;
-            const formattedTime = formatTime(correctedElapsed, timer.timeFormat);
-            
-            // UI 업데이트
-            updateTimerDisplay(objectId, formattedTime);
-            
-            // 타이머 상태 업데이트
-            localTimers.set(objectId, {
-                ...timer,
-                elapsed: correctedElapsed,
-                localStartTime: currentTime - correctedElapsed
-            });
-            
-            console.log(`🔄 오버레이 로컬 타이머 동기화: ${objectId}, 서버 시간: ${serverTime}, 보정된 경과: ${serverElapsed}`);
-        }
+        // 타이머 상태 관리 (서버 중심)
+        const timerStates = new Map();
         
         // 타이머 표시 업데이트
         function updateTimerDisplay(objectId, formattedTime) {
@@ -1159,7 +1017,7 @@
             }
         }
         
-        // 서버에서 타이머 상태를 가져와서 동기화하는 함수
+        // 서버에서 타이머 상태를 가져와서 동기화하는 함수 (서버 중심)
         async function syncTimerStatesFromServer() {
             console.log('🔄 서버에서 타이머 상태 동기화 시작');
             
@@ -1168,14 +1026,8 @@
                 return;
             }
             
-            console.log('🔍 현재 씬 정보:', {
-                id: currentScene.id,
-                name: currentScene.name,
-                objectsCount: currentScene.objects ? currentScene.objects.length : 0
-            });
-            
             // 현재 씬의 타이머 객체들 찾기
-            const timerObjects = currentScene.objects.filter(obj => obj.type === 'text' && obj.properties.isTimer);
+            const timerObjects = currentScene.objects.filter(obj => obj.type === 'timer');
             console.log(`🔍 타이머 객체 ${timerObjects.length}개 발견`);
             
             if (timerObjects.length === 0) {
@@ -1184,46 +1036,17 @@
             }
             
             for (const timerObj of timerObjects) {
-                console.log(`🔍 타이머 객체 정보:`, {
-                    id: timerObj.id,
-                    name: timerObj.name,
-                    properties: timerObj.properties
-                });
-                
                 try {
-                    // 서버에서 타이머 상태 가져오기 (프로젝트 이름 포함)
-                    const projectName = '{{ project_name }}'; // 템플릿에서 프로젝트 이름 가져오기
-                    console.log(`🌐 타이머 상태 요청: /api/live/objects/${timerObj.id}/timer/status?project_name=${encodeURIComponent(projectName)}`);
+                    // 서버에서 타이머 상태 가져오기
+                    const projectName = '{{ project_name }}';
                     const response = await fetch(`/api/live/objects/${timerObj.id}/timer/status?project_name=${encodeURIComponent(projectName)}`);
                     if (response.ok) {
                         const timerData = await response.json();
                         console.log(`⏰ 타이머 ${timerObj.id} 서버 상태:`, timerData);
                         
-                        if (timerData.timer_state && timerData.timer_state.is_running) {
-                            // 타이머가 실행 중이면 로컬 타이머 시작
-                            console.log(`🚀 타이머 ${timerObj.id} 서버에서 실행 중 - 로컬 타이머 시작`);
-                            startLocalTimer(
-                                timerObj.id,
-                                timerData.timer_state.start_time,
-                                timerData.timer_state.elapsed,
-                                timerData.timer_state.time_format || 'MM:SS'
-                            );
-                        } else if (timerData.timer_state) {
-                            // 타이머가 정지 상태면 현재 시간만 표시하고 로컬 타이머 상태 업데이트
-                            console.log(`⏹️ 타이머 ${timerObj.id} 서버에서 정지 상태 - 현재 시간 표시`);
+                        if (timerData.timer_state) {
                             updateTimerDisplay(timerObj.id, timerData.timer_state.current_time || '00:00');
-                            
-                            // 로컬 타이머 상태도 업데이트 (정지 상태로)
-                            localTimers.set(timerObj.id, {
-                                serverStartTime: timerData.timer_state.start_time,
-                                localStartTime: Date.now() / 1000,
-                                elapsed: timerData.timer_state.elapsed || 0,
-                                timeFormat: timerData.timer_state.time_format || 'MM:SS',
-                                isRunning: false
-                            });
                         }
-                    } else {
-                        console.warn(`❌ 타이머 ${timerObj.id} 상태 가져오기 실패: ${response.status}`);
                     }
                 } catch (error) {
                     console.error(`❌ 타이머 ${timerObj.id} 상태 동기화 오류:`, error);
