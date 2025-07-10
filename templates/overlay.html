@@ -780,11 +780,26 @@
             }
         });
 
-        // 타이머 이벤트 핸들러 (하이브리드 방식)
+        // 타이머 이벤트 핸들러 (하이브리드 방식) - 중복 이벤트 방지
+        const timerEventDebounce = new Map(); // 중복 이벤트 방지를 위한 디바운싱
+        
         socket.on('timer_update', (data) => {
             console.log('⏰ Timer event received:', data);
             
             if (!currentScene) return;
+            
+            // 중복 이벤트 방지: 같은 object_id와 action의 이벤트가 100ms 내에 오면 무시
+            const eventKey = `${data.object_id}_${data.action}`;
+            const now = Date.now();
+            const lastEvent = timerEventDebounce.get(eventKey);
+            
+            if (lastEvent && (now - lastEvent) < 100) {
+                console.log(`⚠️ 중복 타이머 이벤트 무시: ${eventKey} (${now - lastEvent}ms 간격)`);
+                return;
+            }
+            
+            timerEventDebounce.set(eventKey, now);
+            console.log(`✅ 타이머 이벤트 처리: ${eventKey}`);
             
             if (data.action === 'start') {
                 // 타이머 시작 - 로컬 계산 시작

@@ -3999,40 +3999,44 @@ def scene_live_off(scene_id):
 @app.route('/api/live/objects/<int:object_id>/timer/<action>', methods=['POST'])
 @jwt_required()
 def control_timer(object_id, action):
-    """타이머 제어 (start/stop/reset)"""
+    """타이머 제어 (start/stop/reset) - 채널별"""
     try:
         data = request.get_json()
         project_name = data.get('project_name')
+        channel_id = data.get('channel_id', 'default')
+        
+        print(f"⏰ 타이머 제어 요청: object_id={object_id}, action={action}, project_name={project_name}, channel_id={channel_id}")
         
         if not project_name:
             return jsonify({'error': '프로젝트 이름이 필요합니다.'}), 400
         
         # 객체 존재 확인
         obj = Object.query.get(object_id)
-        if not obj or obj.type != 'timer':
-            return jsonify({'error': '타이머 객체를 찾을 수 없습니다.'}), 404
+        if not obj or obj.type != 'text':
+            print(f"❌ 텍스트 객체를 찾을 수 없음: object_id={object_id}, obj={obj}, type={obj.type if obj else 'None'}")
+            return jsonify({'error': '텍스트 객체를 찾을 수 없습니다.'}), 404
+        
+        print(f"✅ 텍스트 객체 찾음: {obj.name} (scene_id={obj.scene_id})")
         
         # 객체의 시간 형식 속성 가져오기
-        import json
-        obj_properties = json.loads(obj.properties) if obj.properties else {}
-        time_format = obj_properties.get('timeFormat', 'MM:SS')
+        time_format = obj.properties.get('timeFormat', 'MM:SS') if isinstance(obj.properties, dict) else 'MM:SS'
         
         # 타이머 제어
         timer_result = None
         if action == 'start':
-            timer_result = live_state_manager.start_timer(object_id, project_name, time_format)
+            timer_result = live_state_manager.start_timer(object_id, project_name, time_format, channel_id)
         elif action == 'stop':
-            timer_result = live_state_manager.stop_timer(object_id)
+            timer_result = live_state_manager.stop_timer(object_id, project_name, channel_id)
         elif action == 'reset':
-            timer_result = live_state_manager.reset_timer(object_id)
+            timer_result = live_state_manager.reset_timer(object_id, project_name, channel_id)
         else:
             return jsonify({'error': '유효하지 않은 액션입니다.'}), 400
         
-        print(f"⏰ 타이머 제어 - 객체 ID: {object_id}, 액션: {action}, 시간 형식: {time_format}")
+        print(f"⏰ 타이머 제어 - 객체 ID: {object_id}, 액션: {action}, 시간 형식: {time_format}, 채널: {channel_id}")
         print(f"⏰ 타이머 제어 결과: {timer_result}")
         
-        # 현재 타이머 상태 조회 (시간 형식 적용)
-        timer_state = live_state_manager.get_timer_state(object_id, time_format)
+        # 현재 타이머 상태 조회 (시간 형식 적용, 채널별)
+        timer_state = live_state_manager.get_timer_state(object_id, time_format, project_name, channel_id)
         print(f"⏰ 타이머 상태 조회 결과: {timer_state}")
         
         # timer_state가 None이면 기본값으로 초기화
@@ -4045,9 +4049,9 @@ def control_timer(object_id, action):
             }
             print(f"⏰ timer_state가 None이므로 기본값으로 초기화: {timer_state}")
         
-        # 라이브 상태에도 업데이트 (current_time이 있는 경우에만)
+        # 라이브 상태에도 업데이트 (current_time이 있는 경우에만, 채널별)
         if 'current_time' in timer_state:
-            live_state_manager.update_object_property(project_name, object_id, 'content', timer_state['current_time'])
+            live_state_manager.update_object_property(project_name, object_id, 'content', timer_state['current_time'], channel_id)
         
         # 소켓으로 실시간 업데이트 전송
         timer_update_data = {
@@ -4061,14 +4065,14 @@ def control_timer(object_id, action):
         if timer_result:
             timer_update_data.update(timer_result)
         
-        # 프로젝트 룸으로 전송
+        # 프로젝트 룸으로 전송 (컨트롤 패널용)
         project_room = f'project_{project_name}'
         print(f"⏰ 타이머 업데이트: {project_room} 룸으로 timer_update 이벤트 전송")
         print(f"⏰ 전송 데이터: {timer_update_data}")
         socketio.emit('timer_update', timer_update_data, room=project_room)
         print(f"⏰ 프로젝트 룸 이벤트 전송 완료")
         
-        # 오버레이 페이지를 위해 모든 사용자의 개별 룸으로도 전송
+        # 오버레이 페이지를 위해 모든 사용자의 개별 룸으로도 전송 (중복 방지를 위해 한 번만)
         scene = obj.scene
         project = scene.project
         if project:
@@ -4076,6 +4080,7 @@ def control_timer(object_id, action):
             permissions = ProjectPermission.query.filter_by(project_id=project.id).all()
             print(f"⏰ 프로젝트 권한 개수: {len(permissions)}")
             
+            # 오버레이 페이지용 이벤트 전송 (프로젝트 룸과 동일한 데이터)
             for permission in permissions:
                 user_room = f'user_{permission.user_id}'
                 print(f"⏰ 오버레이용 타이머 업데이트: {user_room} 룸으로 timer_update 이벤트 전송")
@@ -4098,10 +4103,12 @@ def control_timer(object_id, action):
 
 @app.route('/api/live/objects/<int:object_id>/timer/status', methods=['GET'])
 def get_timer_status(object_id):
-    """타이머 상태 조회 (오버레이 페이지용)"""
+    """타이머 상태 조회 (오버레이 페이지용) - 채널별"""
     try:
-        # 프로젝트 이름을 쿼리 파라미터로 받기
+        # 프로젝트 이름과 채널 ID를 쿼리 파라미터로 받기
         project_name = request.args.get('project_name')
+        channel_id = request.args.get('channel_id', 'default')
+        
         if not project_name:
             return jsonify({'error': '프로젝트 이름이 필요합니다.'}), 400
         
@@ -4116,11 +4123,11 @@ def get_timer_status(object_id):
         if project.name != project_name:
             return jsonify({'error': '프로젝트가 일치하지 않습니다.'}), 404
         
-        print(f"⏰ 타이머 상태 조회: object_id={object_id}, project_name={project_name}")
+        print(f"⏰ 타이머 상태 조회: object_id={object_id}, project_name={project_name}, channel_id={channel_id}")
         
-        # 타이머 상태 가져오기
+        # 타이머 상태 가져오기 (채널별)
         time_format = obj.properties.get('timeFormat', 'MM:SS') if isinstance(obj.properties, dict) else 'MM:SS'
-        timer_state = live_state_manager.get_timer_state(object_id, time_format)
+        timer_state = live_state_manager.get_timer_state(object_id, time_format, project_name, channel_id)
         
         print(f"⏰ 타이머 상태 조회 결과: {timer_state}")
         
@@ -4138,6 +4145,7 @@ def get_timer_status(object_id):
         return jsonify({
             'object_id': object_id,
             'project_name': project_name,
+            'channel_id': channel_id,
             'timer_state': timer_state
         })
         
