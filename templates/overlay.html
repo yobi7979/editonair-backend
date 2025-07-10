@@ -894,6 +894,39 @@
                         this.resetTimer(objectId);
                         break;
                 }
+            },
+            
+            // 씬 변경 시 불필요한 타이머 정리
+            cleanupTimers(currentSceneObjects) {
+                console.log('🧹 타이머 정리 시작');
+                
+                // 현재 씬의 타이머 객체 ID들
+                const currentTimerIds = new Set();
+                if (currentSceneObjects) {
+                    currentSceneObjects
+                        .filter(obj => obj.type === 'timer')
+                        .forEach(obj => currentTimerIds.add(obj.id));
+                }
+                
+                // 실행 중인 타이머 중에서 현재 씬에 없는 것들 정리
+                const timersToRemove = [];
+                this.timers.forEach((timer, objectId) => {
+                    if (!currentTimerIds.has(objectId)) {
+                        console.log(`🧹 불필요한 타이머 정리: ${objectId}`);
+                        timersToRemove.push(objectId);
+                    }
+                });
+                
+                // 타이머 정리
+                timersToRemove.forEach(objectId => {
+                    const timer = this.timers.get(objectId);
+                    if (timer && timer.interval) {
+                        clearInterval(timer.interval);
+                    }
+                    this.timers.delete(objectId);
+                });
+                
+                console.log(`🧹 타이머 정리 완료: ${timersToRemove.length}개 제거됨`);
             }
         };
 
@@ -903,7 +936,7 @@
             timerManager.handleTimerCommand(data.object_id, data.action, data.time_format);
         });
 
-        // 타이머 상태 동기화 (단순화)
+        // 타이머 상태 동기화 (최적화)
         async function syncTimerStatesFromServer() {
             console.log('🔄 서버에서 타이머 상태 동기화 시작');
             
@@ -917,9 +950,11 @@
             console.log(`🔍 타이머 객체 ${timerObjects.length}개 발견`);
             
             if (timerObjects.length === 0) {
-                console.log('⚠️ 현재 씬에 타이머 객체가 없음');
+                console.log('✅ 현재 씬에 타이머 객체가 없음 - 동기화 완료');
                 return;
             }
+            
+            console.log(`⏰ ${timerObjects.length}개 타이머 객체 동기화 시작`);
             
             for (const timerObj of timerObjects) {
                 try {
@@ -954,13 +989,18 @@
         // 연결 상태를 수동으로 체크하는 함수를 전역으로 노출
         window.checkWebSocketStatus = checkConnectionStatus;
         
-        // 페이지 로드 완료 후 초기 연결 상태 체크 및 타이머 상태 동기화
+        // 페이지 로드 완료 후 초기 연결 상태 체크 및 타이머 상태 동기화 (최적화)
         setTimeout(() => {
             console.log('🔍 Initial connection status check:');
             checkConnectionStatus();
             
-            // 서버에서 타이머 상태 동기화
-            syncTimerStatesFromServer();
+            // 현재 씬에 타이머가 있는 경우에만 동기화
+            if (currentScene && currentScene.objects && currentScene.objects.some(obj => obj.type === 'timer')) {
+                console.log('⏰ 초기 로딩 - 타이머 객체가 있는 씬이므로 동기화 시작');
+                syncTimerStatesFromServer();
+            } else {
+                console.log('✅ 초기 로딩 - 타이머 객체가 없는 씬이므로 동기화 건너뜀');
+            }
         }, 1000);
 
         // 객체 생성 함수
@@ -1581,7 +1621,7 @@
             console.log('🎯 모든 이미지 준비 처리 완료');
         }
 
-        // 씬 변경 이벤트 수신 (단순화)
+        // 씬 변경 이벤트 수신 (최적화)
         socket.on('scene_change', async (data) => {
             console.log('🔄 Scene change event received:', data);
             
@@ -1593,14 +1633,23 @@
                 // 이미지 로딩 대기 (백그라운드)
                 waitForSceneImagesReady(newScene);
                 
+                // 씬 변경 전에 기존 타이머 정리
+                timerManager.cleanupTimers(newScene.objects);
+                
                 currentScene = newScene;
                 motionManager.updateScene(newScene, false);
                 console.log('✅ 씬 전환 완료');
                 
-                // 씬 전환 후 타이머 상태 동기화
-                setTimeout(() => {
-                    syncTimerStatesFromServer();
-                }, 500);
+                // 타이머가 있는 씬에서만 타이머 상태 동기화
+                const hasTimerObjects = newScene.objects && newScene.objects.some(obj => obj.type === 'timer');
+                if (hasTimerObjects) {
+                    console.log('⏰ 타이머 객체가 있는 씬 - 타이머 상태 동기화 시작');
+                    setTimeout(() => {
+                        syncTimerStatesFromServer();
+                    }, 500);
+                } else {
+                    console.log('✅ 타이머 객체가 없는 씬 - 타이머 동기화 건너뜀');
+                }
                 
             } catch (error) {
                 console.error('❌ 씬 변경 중 오류:', error);
