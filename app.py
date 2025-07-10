@@ -4046,6 +4046,10 @@ def control_timer(object_id, action):
             'timestamp': datetime.now().isoformat()
         }
         
+        # timer_result의 데이터도 포함 (클라이언트에서 필요)
+        if timer_result:
+            timer_update_data.update(timer_result)
+        
         # 프로젝트 룸으로 전송
         project_room = f'project_{project_name}'
         print(f"⏰ 타이머 업데이트: {project_room} 룸으로 timer_update 이벤트 전송")
