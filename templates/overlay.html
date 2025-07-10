@@ -680,20 +680,32 @@
         });
 
         // 객체 속성 업데이트 이벤트 핸들러
-        socket.on('object_update', (data) => {
-            console.log('🎯 Object update event received:', data);
+        socket.on('object_live_update', (data) => {
+            console.log('🎯 Object live update event received:', data);
             
             if (!currentScene) return;
             
             // 현재 씬의 객체 목록에서 업데이트할 객체 찾기
             const objIndex = currentScene.objects.findIndex(obj => obj.id === data.object_id);
-            if (objIndex === -1) return;
+            if (objIndex === -1) {
+                console.warn(`❌ 객체를 찾을 수 없음: object_id=${data.object_id}`);
+                return;
+            }
+            
+            console.log(`✅ 객체 찾음: ${currentScene.objects[objIndex].name} (${currentScene.objects[objIndex].type})`);
+            console.log(`🔄 속성 업데이트: ${data.property} = ${data.value}`);
             
             // 객체 속성 업데이트
-            currentScene.objects[objIndex] = {
-                ...currentScene.objects[objIndex],
-                ...data.object
-            };
+            if (data.property === 'content') {
+                // 텍스트 객체 내용 업데이트
+                currentScene.objects[objIndex].properties.content = data.value;
+            } else if (data.property === 'src') {
+                // 이미지 객체 src 업데이트
+                currentScene.objects[objIndex].properties.src = data.value;
+            } else if (data.property === 'color') {
+                // 도형 객체 컬러 업데이트
+                currentScene.objects[objIndex].properties.color = data.value;
+            }
             
             // 기존 객체 요소 제거
             const oldElement = motionManager.objects.get(data.object_id);
@@ -708,6 +720,7 @@
                 motionManager.container.appendChild(newElement);
                 motionManager.objects.set(data.object_id, newElement);
                 newElement.dataset.inMotionCompleted = 'true';
+                console.log(`✅ 객체 업데이트 완료: ${data.object_id}`);
             }
         });
 
