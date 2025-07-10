@@ -3840,6 +3840,14 @@ def update_text_live(object_id):
             permissions = ProjectPermission.query.filter_by(project_id=project.id).all()
             print(f"🔍 프로젝트 권한 개수: {len(permissions)}")
             
+            if len(permissions) == 0:
+                print(f"⚠️ 프로젝트에 권한이 있는 사용자가 없음: project_id={project.id}")
+                # 권한이 없어도 기본 사용자 룸으로 전송 시도
+                default_user_room = f'user_1'  # 기본 사용자 ID
+                print(f"🚀 기본 사용자 룸으로 전송 시도: {default_user_room}")
+                socketio.emit('object_live_update', object_update_data, room=default_user_room)
+                print(f"🚀 기본 사용자 룸 이벤트 전송 완료")
+            
             for permission in permissions:
                 user_room = f'user_{permission.user_id}'
                 print(f"🚀 오버레이용 텍스트 업데이트: {user_room} 룸으로 object_live_update 이벤트 전송")
@@ -4031,16 +4039,28 @@ def control_timer(object_id, action):
         }
         
         # 프로젝트 룸으로 전송
-        socketio.emit('timer_update', timer_update_data, room=f'project_{project_name}')
+        project_room = f'project_{project_name}'
+        print(f"⏰ 타이머 업데이트: {project_room} 룸으로 timer_update 이벤트 전송")
+        print(f"⏰ 전송 데이터: {timer_update_data}")
+        socketio.emit('timer_update', timer_update_data, room=project_room)
+        print(f"⏰ 프로젝트 룸 이벤트 전송 완료")
         
         # 오버레이 페이지를 위해 모든 사용자의 개별 룸으로도 전송
         scene = obj.scene
         project = scene.project
         if project:
+            print(f"⏰ 프로젝트 정보: {project.name} (id={project.id})")
             permissions = ProjectPermission.query.filter_by(project_id=project.id).all()
+            print(f"⏰ 프로젝트 권한 개수: {len(permissions)}")
+            
             for permission in permissions:
                 user_room = f'user_{permission.user_id}'
+                print(f"⏰ 오버레이용 타이머 업데이트: {user_room} 룸으로 timer_update 이벤트 전송")
                 socketio.emit('timer_update', timer_update_data, room=user_room)
+                print(f"⏰ {user_room} 룸으로 이벤트 전송 완료")
+            print(f"⏰ 모든 사용자 룸으로 타이머 업데이트 이벤트 전송 완료")
+        else:
+            print(f"⏰ 프로젝트를 찾을 수 없음: scene_id={obj.scene_id}")
         
         return jsonify({
             'message': f'타이머 {action} 완료',
@@ -4364,6 +4384,10 @@ if __name__ == '__main__':
             )
             db.session.add(admin)
             db.session.commit()
+    
+    # 타이머 업데이트 루프 시작
+    print("⏰ 타이머 업데이트 루프 시작")
+    live_state_manager.start_timer_updates()
     
     # Railway의 PORT 환경 변수 사용, 없으면 5000 사용
     port = int(os.environ.get('PORT', 5000))
