@@ -707,20 +707,61 @@
                 currentScene.objects[objIndex].properties.color = data.value;
             }
             
-            // 기존 객체 요소 제거
+            // 기존 객체 요소 업데이트 (제거 후 재생성 대신 내용만 업데이트)
             const oldElement = motionManager.objects.get(data.object_id);
             if (oldElement) {
-                oldElement.remove();
-                motionManager.objects.delete(data.object_id);
+                // 기존 요소의 내용만 업데이트
+                if (data.property === 'content') {
+                    // 텍스트 내용 업데이트
+                    const textElement = oldElement.querySelector('.timer-text, .text-content');
+                    if (textElement) {
+                        textElement.textContent = data.value;
+                    }
+                } else if (data.property === 'src') {
+                    // 이미지 src 업데이트
+                    const imgElement = oldElement.querySelector('img');
+                    if (imgElement) {
+                        imgElement.src = data.value;
+                    }
+                } else if (data.property === 'color') {
+                    // 도형 컬러 업데이트
+                    oldElement.style.backgroundColor = data.value;
+                }
+                console.log(`✅ 객체 내용 업데이트 완료: ${data.object_id}`);
+            } else {
+                // 기존 요소가 없으면 새로 생성
+                const newElement = createObjectElement(currentScene.objects[objIndex]);
+                if (newElement) {
+                    motionManager.container.appendChild(newElement);
+                    motionManager.objects.set(data.object_id, newElement);
+                    newElement.dataset.inMotionCompleted = 'true';
+                    console.log(`✅ 새 객체 생성 완료: ${data.object_id}`);
+                }
             }
+        });
+
+        // 타이머 이벤트 핸들러 (하이브리드 방식)
+        socket.on('timer_update', (data) => {
+            console.log('⏰ Timer event received:', data);
             
-            // 새 객체 요소 생성 및 추가
-            const newElement = createObjectElement(currentScene.objects[objIndex]);
-            if (newElement) {
-                motionManager.container.appendChild(newElement);
-                motionManager.objects.set(data.object_id, newElement);
-                newElement.dataset.inMotionCompleted = 'true';
-                console.log(`✅ 객체 업데이트 완료: ${data.object_id}`);
+            if (!currentScene) return;
+            
+            if (data.action === 'start') {
+                // 타이머 시작 - 로컬 계산 시작
+                console.log(`🚀 타이머 시작: ${data.object_id}`);
+                startLocalTimer(data.object_id, data.start_time, data.elapsed, data.time_format);
+            } else if (data.action === 'stop') {
+                // 타이머 정지 - 로컬 계산 정지
+                console.log(`⏹️ 타이머 정지: ${data.object_id}`);
+                stopLocalTimer(data.object_id, data.elapsed);
+            } else if (data.action === 'reset') {
+                // 타이머 리셋 - 로컬 계산 리셋
+                console.log(`🔄 타이머 리셋: ${data.object_id}`);
+                resetLocalTimer(data.object_id);
+            } else if (data.action === 'sync') {
+                // 타이머 동기화 - 드리프트 보정
+                console.log(`🔄 타이머 동기화: ${data.object_id}`);
+                syncLocalTimer(data.object_id, data.server_time, data.start_time, data.elapsed);
             }
         });
 
@@ -892,6 +933,145 @@
             }
         });
 
+        // 로컬 타이머 관리 (하이브리드 방식)
+        const localTimers = new Map();
+        const timerIntervals = new Map();
+        
+        // 로컬 타이머 시작
+        function startLocalTimer(objectId, serverStartTime, elapsed, timeFormat = 'MM:SS') {
+            const localStartTime = Date.now() / 1000;
+            const adjustedElapsed = elapsed;
+            
+            localTimers.set(objectId, {
+                serverStartTime,
+                localStartTime,
+                elapsed: adjustedElapsed,
+                timeFormat,
+                isRunning: true
+            });
+            
+            // 1초마다 업데이트하는 인터벌 시작
+            const interval = setInterval(() => {
+                const timer = localTimers.get(objectId);
+                if (!timer || !timer.isRunning) return;
+                
+                const currentTime = Date.now() / 1000;
+                const newElapsed = timer.elapsed + (currentTime - timer.localStartTime);
+                const formattedTime = formatTime(newElapsed, timer.timeFormat);
+                
+                // UI 업데이트
+                updateTimerDisplay(objectId, formattedTime);
+                
+                // 타이머 상태 업데이트
+                localTimers.set(objectId, {
+                    ...timer,
+                    elapsed: newElapsed
+                });
+            }, 1000);
+            
+            timerIntervals.set(objectId, interval);
+            console.log(`🚀 오버레이 로컬 타이머 시작: ${objectId}, 서버 시작: ${serverStartTime}, 경과: ${elapsed}`);
+        }
+        
+        // 로컬 타이머 정지
+        function stopLocalTimer(objectId, finalElapsed) {
+            // 인터벌 정지
+            const interval = timerIntervals.get(objectId);
+            if (interval) {
+                clearInterval(interval);
+                timerIntervals.delete(objectId);
+            }
+            
+            // 타이머 상태 업데이트
+            const timer = localTimers.get(objectId);
+            if (timer) {
+                const formattedTime = formatTime(finalElapsed, timer.timeFormat);
+                updateTimerDisplay(objectId, formattedTime);
+                
+                localTimers.set(objectId, {
+                    ...timer,
+                    elapsed: finalElapsed,
+                    isRunning: false
+                });
+            }
+            
+            console.log(`⏹️ 오버레이 로컬 타이머 정지: ${objectId}, 최종 경과: ${finalElapsed}`);
+        }
+        
+        // 로컬 타이머 리셋
+        function resetLocalTimer(objectId) {
+            // 인터벌 정지
+            const interval = timerIntervals.get(objectId);
+            if (interval) {
+                clearInterval(interval);
+                timerIntervals.delete(objectId);
+            }
+            
+            // 타이머 상태 리셋
+            const timer = localTimers.get(objectId);
+            if (timer) {
+                updateTimerDisplay(objectId, '00:00');
+                
+                localTimers.set(objectId, {
+                    ...timer,
+                    elapsed: 0,
+                    isRunning: false
+                });
+            }
+            
+            console.log(`🔄 오버레이 로컬 타이머 리셋: ${objectId}`);
+        }
+        
+        // 로컬 타이머 동기화
+        function syncLocalTimer(objectId, serverTime, serverStartTime, serverElapsed) {
+            const timer = localTimers.get(objectId);
+            if (!timer || !timer.isRunning) return;
+            
+            const currentTime = Date.now() / 1000;
+            const correctedElapsed = serverElapsed;
+            const formattedTime = formatTime(correctedElapsed, timer.timeFormat);
+            
+            // UI 업데이트
+            updateTimerDisplay(objectId, formattedTime);
+            
+            // 타이머 상태 업데이트
+            localTimers.set(objectId, {
+                ...timer,
+                elapsed: correctedElapsed,
+                localStartTime: currentTime - correctedElapsed
+            });
+            
+            console.log(`🔄 오버레이 로컬 타이머 동기화: ${objectId}, 서버 시간: ${serverTime}, 보정된 경과: ${serverElapsed}`);
+        }
+        
+        // 타이머 표시 업데이트
+        function updateTimerDisplay(objectId, formattedTime) {
+            const element = motionManager.objects.get(objectId);
+            if (element) {
+                const textElement = element.querySelector('.timer-text, .text-content');
+                if (textElement) {
+                    textElement.textContent = formattedTime;
+                }
+            }
+        }
+        
+        // 시간 포맷팅 함수
+        function formatTime(elapsedSeconds, timeFormat = 'MM:SS') {
+            if (timeFormat === 'SS') {
+                return `${Math.floor(elapsedSeconds).toString().padStart(2, '0')}`;
+            } else if (timeFormat === 'HH:MM:SS') {
+                const hours = Math.floor(elapsedSeconds / 3600);
+                const minutes = Math.floor((elapsedSeconds % 3600) / 60);
+                const seconds = Math.floor(elapsedSeconds % 60);
+                return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            } else {
+                // 기본 MM:SS 형식
+                const minutes = Math.floor(elapsedSeconds / 60);
+                const seconds = Math.floor(elapsedSeconds % 60);
+                return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }
+        }
+        
         // 연결 상태를 수동으로 체크하는 함수를 전역으로 노출
         window.checkWebSocketStatus = checkConnectionStatus;
         

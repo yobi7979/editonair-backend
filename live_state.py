@@ -52,45 +52,44 @@ class LiveStateManager:
             self.timer_update_thread.join(timeout=1)
     
     def _timer_update_loop(self):
-        """타이머 업데이트 루프"""
+        """타이머 동기화 루프 (하이브리드 방식)"""
         while self.timer_update_running:
             try:
-                # 실행 중인 타이머들 업데이트
+                # 실행 중인 타이머들 동기화 (30초마다)
                 running_timers = {obj_id: state for obj_id, state in self.timer_states.items() 
                                 if state.get('is_running', False)}
                 
                 if running_timers and self.websocket_update_callback:
-                    print(f"⏰ 실행 중인 타이머 개수: {len(running_timers)}")
+                    print(f"⏰ 실행 중인 타이머 동기화 - 개수: {len(running_timers)}")
                     for obj_id, timer_state in running_timers.items():
                         project_name = timer_state.get('project_name')
-                        time_format = timer_state.get('time_format', 'MM:SS')
                         
                         if project_name:
-                            # 타이머 상태 업데이트
-                            updated_state = self.get_timer_state(obj_id, time_format)
-                            print(f"⏰ 타이머 업데이트 - 객체 ID: {obj_id}, 시간: {updated_state['current_time']}")
+                            # 서버 시간 기준으로 경과 시간 계산
+                            current_time = time.time()
+                            start_time = timer_state['start_time']
+                            elapsed = timer_state['elapsed'] + (current_time - start_time)
                             
-                            # 라이브 상태 업데이트
-                            self.update_object_property(project_name, obj_id, 'content', updated_state['current_time'])
-                            
-                            # WebSocket으로 실시간 업데이트 전송
-                            timer_update_data = {
+                            # 동기화 데이터 전송
+                            sync_data = {
                                 'object_id': obj_id,
-                                'action': 'update',
-                                'timer_state': updated_state,
+                                'action': 'sync',
+                                'server_time': current_time,
+                                'start_time': start_time,
+                                'elapsed': elapsed,
                                 'timestamp': datetime.now().isoformat()
                             }
                             
-                            # 콜백 함수를 통해 WebSocket 업데이트 전송
-                            self.websocket_update_callback(timer_update_data, project_name)
-                            print(f"⏰ 타이머 WebSocket 전송 완료 - 객체 ID: {obj_id}")
+                            # 콜백 함수를 통해 WebSocket 동기화 전송
+                            self.websocket_update_callback(sync_data, project_name)
+                            print(f"⏰ 타이머 동기화 전송 완료 - 객체 ID: {obj_id}, 경과: {elapsed:.1f}초")
                 
-                # 1초마다 업데이트
-                time.sleep(1)
+                # 30초마다 동기화 (실시간 업데이트 대신)
+                time.sleep(30)
                 
             except Exception as e:
-                print(f"타이머 업데이트 루프 오류: {e}")
-                time.sleep(1)
+                print(f"타이머 동기화 루프 오류: {e}")
+                time.sleep(30)
     
     def get_project_live_state(self, project_name: str) -> Dict[int, Dict[str, Any]]:
         """프로젝트의 모든 라이브 상태 반환"""
@@ -156,7 +155,7 @@ class LiveStateManager:
     
     # 타이머 상태 관리
     def start_timer(self, object_id: int, project_name: str = None, time_format: str = 'MM:SS'):
-        """타이머 시작"""
+        """타이머 시작 (하이브리드 방식)"""
         current_time = time.time()
         if object_id in self.timer_states:
             # 이미 있는 타이머라면 elapsed 시간 누적
@@ -171,22 +170,49 @@ class LiveStateManager:
             'project_name': project_name,
             'time_format': time_format
         }
+        
+        # 타이머 시작 이벤트 전송 (클라이언트가 로컬 계산을 시작하도록)
+        if self.websocket_update_callback and project_name:
+            start_data = {
+                'object_id': object_id,
+                'action': 'start',
+                'server_time': current_time,
+                'start_time': current_time,
+                'elapsed': elapsed,
+                'time_format': time_format,
+                'timestamp': datetime.now().isoformat()
+            }
+            self.websocket_update_callback(start_data, project_name)
+            print(f"⏰ 타이머 시작 이벤트 전송 - 객체 ID: {object_id}, 서버 시간: {current_time}")
     
     def stop_timer(self, object_id: int):
-        """타이머 정지"""
+        """타이머 정지 (하이브리드 방식)"""
         if object_id in self.timer_states and self.timer_states[object_id]['is_running']:
             current_time = time.time()
             start_time = self.timer_states[object_id]['start_time']
             elapsed = self.timer_states[object_id]['elapsed']
+            project_name = self.timer_states[object_id].get('project_name')
             
             self.timer_states[object_id] = {
                 **self.timer_states[object_id],
                 'is_running': False,
                 'elapsed': elapsed + (current_time - start_time)
             }
+            
+            # 타이머 정지 이벤트 전송
+            if self.websocket_update_callback and project_name:
+                stop_data = {
+                    'object_id': object_id,
+                    'action': 'stop',
+                    'server_time': current_time,
+                    'elapsed': elapsed + (current_time - start_time),
+                    'timestamp': datetime.now().isoformat()
+                }
+                self.websocket_update_callback(stop_data, project_name)
+                print(f"⏰ 타이머 정지 이벤트 전송 - 객체 ID: {object_id}")
     
     def reset_timer(self, object_id: int):
-        """타이머 리셋"""
+        """타이머 리셋 (하이브리드 방식)"""
         if object_id in self.timer_states:
             project_name = self.timer_states[object_id].get('project_name')
             time_format = self.timer_states[object_id].get('time_format', 'MM:SS')
@@ -206,6 +232,18 @@ class LiveStateManager:
                 'project_name': None,
                 'time_format': 'MM:SS'
             }
+        
+        # 타이머 리셋 이벤트 전송
+        if self.websocket_update_callback and project_name:
+            reset_data = {
+                'object_id': object_id,
+                'action': 'reset',
+                'server_time': time.time(),
+                'elapsed': 0,
+                'timestamp': datetime.now().isoformat()
+            }
+            self.websocket_update_callback(reset_data, project_name)
+            print(f"⏰ 타이머 리셋 이벤트 전송 - 객체 ID: {object_id}")
     
     def get_timer_state(self, object_id: int, time_format: str = 'MM:SS') -> Dict[str, Any]:
         """타이머 상태 반환"""
