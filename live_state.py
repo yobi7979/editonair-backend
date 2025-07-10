@@ -64,7 +64,7 @@ class LiveStateManager:
                         
                         for object_id, timer_state in timers.items():
                             if timer_state.get('is_running', False):
-                                # 현재 경과 시간 계산
+                                # 현재 경과 시간 계산 (start_time은 고정, elapsed만 누적)
                                 current_time = time.time()
                                 start_time = timer_state['start_time']
                                 elapsed = timer_state['elapsed'] + (current_time - start_time)
@@ -72,12 +72,14 @@ class LiveStateManager:
                                 # 시간 포맷팅
                                 current_time_str = self._format_time(elapsed, timer_state.get('time_format', 'MM:SS'))
                                 
-                                # 타이머 상태 업데이트 (start_time을 현재 시간으로 갱신하여 누적 방지)
+                                # 타이머 상태 업데이트 (elapsed만 업데이트, start_time은 고정)
                                 self.timer_states[project_name][channel_id][object_id] = {
                                     **timer_state,
-                                    'elapsed': elapsed,
-                                    'start_time': current_time  # start_time을 현재 시간으로 갱신
+                                    'elapsed': elapsed
+                                    # start_time은 고정하여 누적 계산이 정확하게 되도록 함
                                 }
+                                
+                                print(f"⏰ 타이머 {object_id} 계산: start_time={start_time:.1f}, current_time={current_time:.1f}, elapsed={elapsed:.1f}, formatted={current_time_str}")
                                 
                                 running_timers.append({
                                     'object_id': object_id,
