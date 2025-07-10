@@ -184,6 +184,13 @@ class LiveStateManager:
             }
             self.websocket_update_callback(start_data, project_name)
             print(f"⏰ 타이머 시작 이벤트 전송 - 객체 ID: {object_id}, 서버 시간: {current_time}")
+        
+        # 클라이언트에 응답할 데이터 반환
+        return {
+            'start_time': current_time,
+            'elapsed': elapsed,
+            'time_format': time_format
+        }
     
     def stop_timer(self, object_id: int):
         """타이머 정지 (하이브리드 방식)"""
@@ -193,10 +200,12 @@ class LiveStateManager:
             elapsed = self.timer_states[object_id]['elapsed']
             project_name = self.timer_states[object_id].get('project_name')
             
+            final_elapsed = elapsed + (current_time - start_time)
+            
             self.timer_states[object_id] = {
                 **self.timer_states[object_id],
                 'is_running': False,
-                'elapsed': elapsed + (current_time - start_time)
+                'elapsed': final_elapsed
             }
             
             # 타이머 정지 이벤트 전송
@@ -205,11 +214,21 @@ class LiveStateManager:
                     'object_id': object_id,
                     'action': 'stop',
                     'server_time': current_time,
-                    'elapsed': elapsed + (current_time - start_time),
+                    'elapsed': final_elapsed,
                     'timestamp': datetime.now().isoformat()
                 }
                 self.websocket_update_callback(stop_data, project_name)
                 print(f"⏰ 타이머 정지 이벤트 전송 - 객체 ID: {object_id}")
+            
+            # 클라이언트에 응답할 데이터 반환
+            return {
+                'elapsed': final_elapsed
+            }
+        
+        # 타이머가 실행 중이지 않은 경우
+        return {
+            'elapsed': self.timer_states.get(object_id, {}).get('elapsed', 0)
+        }
     
     def reset_timer(self, object_id: int):
         """타이머 리셋 (하이브리드 방식)"""
@@ -244,6 +263,11 @@ class LiveStateManager:
             }
             self.websocket_update_callback(reset_data, project_name)
             print(f"⏰ 타이머 리셋 이벤트 전송 - 객체 ID: {object_id}")
+        
+        # 클라이언트에 응답할 데이터 반환
+        return {
+            'elapsed': 0
+        }
     
     def get_timer_state(self, object_id: int, time_format: str = 'MM:SS') -> Dict[str, Any]:
         """타이머 상태 반환"""

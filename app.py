@@ -4018,16 +4018,18 @@ def control_timer(object_id, action):
         time_format = obj_properties.get('timeFormat', 'MM:SS')
         
         # 타이머 제어
+        timer_result = None
         if action == 'start':
-            live_state_manager.start_timer(object_id, project_name, time_format)
+            timer_result = live_state_manager.start_timer(object_id, project_name, time_format)
         elif action == 'stop':
-            live_state_manager.stop_timer(object_id)
+            timer_result = live_state_manager.stop_timer(object_id)
         elif action == 'reset':
-            live_state_manager.reset_timer(object_id)
+            timer_result = live_state_manager.reset_timer(object_id)
         else:
             return jsonify({'error': '유효하지 않은 액션입니다.'}), 400
         
         print(f"⏰ 타이머 제어 - 객체 ID: {object_id}, 액션: {action}, 시간 형식: {time_format}")
+        print(f"⏰ 타이머 제어 결과: {timer_result}")
         
         # 현재 타이머 상태 조회 (시간 형식 적용)
         timer_state = live_state_manager.get_timer_state(object_id, time_format)
@@ -4071,7 +4073,8 @@ def control_timer(object_id, action):
         return jsonify({
             'message': f'타이머 {action} 완료',
             'object_id': object_id,
-            'timer_state': timer_state
+            'timer_state': timer_state,
+            **timer_result  # 타이머 제어 결과 데이터 포함
         })
         
     except Exception as e:
