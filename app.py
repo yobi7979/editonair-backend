@@ -4034,7 +4034,7 @@ def control_timer(object_id, action):
         # 객체의 시간 형식 속성 가져오기
         time_format = properties.get('timeFormat', 'MM:SS')
         
-        # 타이머 제어
+        # 타이머 제어 (새로운 서버 중심 시스템)
         timer_result = None
         if action == 'start':
             timer_result = live_state_manager.start_timer(object_id, project_name, time_format, channel_id)
@@ -4048,60 +4048,16 @@ def control_timer(object_id, action):
         print(f"⏰ 타이머 제어 - 객체 ID: {object_id}, 액션: {action}, 시간 형식: {time_format}, 채널: {channel_id}")
         print(f"⏰ 타이머 제어 결과: {timer_result}")
         
-        # 현재 타이머 상태 조회 (시간 형식 적용, 채널별)
+        # 현재 타이머 상태 조회
         timer_state = live_state_manager.get_timer_state(object_id, time_format, project_name, channel_id)
         print(f"⏰ 타이머 상태 조회 결과: {timer_state}")
         
-        # timer_state가 None이면 기본값으로 초기화
-        if timer_state is None:
-            timer_state = {
-                'current_time': '00:00',
-                'elapsed': 0,
-                'is_running': False,
-                'time_format': time_format
-            }
-            print(f"⏰ timer_state가 None이므로 기본값으로 초기화: {timer_state}")
-        
-        # 라이브 상태에도 업데이트 (current_time이 있는 경우에만, 채널별)
+        # 라이브 상태에도 업데이트
         if 'current_time' in timer_state:
             live_state_manager.update_object_property(project_name, object_id, 'content', timer_state['current_time'], channel_id)
         
-        # 소켓으로 실시간 업데이트 전송
-        timer_update_data = {
-            'object_id': object_id,
-            'action': action,
-            'timestamp': datetime.now().isoformat(),
-            'timer_state': timer_state  # 항상 포함
-        }
-        
-        # timer_result의 데이터도 포함 (클라이언트에서 필요)
-        if timer_result:
-            timer_update_data.update(timer_result)
-        
-        # 프로젝트 룸으로 전송 (컨트롤 패널용)
-        project_room = f'project_{project_name}'
-        print(f"⏰ 타이머 업데이트: {project_room} 룸으로 timer_update 이벤트 전송")
-        print(f"⏰ 전송 데이터: {timer_update_data}")
-        socketio.emit('timer_update', timer_update_data, room=project_room)
-        print(f"⏰ 프로젝트 룸 이벤트 전송 완료")
-        
-        # 오버레이 페이지를 위해 모든 사용자의 개별 룸으로도 전송 (중복 방지를 위해 한 번만)
-        scene = obj.scene
-        project = scene.project
-        if project:
-            print(f"⏰ 프로젝트 정보: {project.name} (id={project.id})")
-            permissions = ProjectPermission.query.filter_by(project_id=project.id).all()
-            print(f"⏰ 프로젝트 권한 개수: {len(permissions)}")
-            
-            # 오버레이 페이지용 이벤트 전송 (프로젝트 룸과 동일한 데이터)
-            for permission in permissions:
-                user_room = f'user_{permission.user_id}'
-                print(f"⏰ 오버레이용 타이머 업데이트: {user_room} 룸으로 timer_update 이벤트 전송")
-                socketio.emit('timer_update', timer_update_data, room=user_room)
-                print(f"⏰ {user_room} 룸으로 이벤트 전송 완료")
-            print(f"⏰ 모든 사용자 룸으로 타이머 업데이트 이벤트 전송 완료")
-        else:
-            print(f"⏰ 프로젝트를 찾을 수 없음: scene_id={obj.scene_id}")
+        # WebSocket 이벤트는 live_state_manager에서 자동으로 전송됨
+        # 여기서는 추가 전송하지 않음
         
         return jsonify({
             'message': f'타이머 {action} 완료',
@@ -4348,14 +4304,14 @@ def update_shape_live(object_id):
 
 # --- Main Entry Point ---
 
-# WebSocket 업데이트 콜백 함수 설정
+# WebSocket 업데이트 콜백 함수 설정 (새로운 서버 중심 시스템)
 def websocket_timer_update_callback(timer_update_data, project_name):
     """타이머 업데이트를 WebSocket으로 전송하는 콜백 함수"""
     try:
         print(f"⏰ 타이머 WebSocket 콜백 호출 - 프로젝트: {project_name}")
         print(f"⏰ 전송 데이터: {timer_update_data}")
         
-        # 프로젝트 룸으로 전송
+        # 프로젝트 룸으로 전송 (컨트롤 패널용)
         project_room = f'project_{project_name}'
         socketio.emit('timer_update', timer_update_data, room=project_room)
         print(f"⏰ 프로젝트 룸 전송 완료: {project_room}")
