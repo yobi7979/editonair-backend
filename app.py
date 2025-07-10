@@ -4416,6 +4416,54 @@ def delete_canvas_preset(preset_id):
 # 라이브 상태 관리자에 콜백 함수 설정
 live_state_manager.set_websocket_callback(websocket_timer_update_callback)
 
+@socketio.on('timer_state_update')
+def handle_timer_state_update(data):
+    """타이머 상태 업데이트 수신 및 전송"""
+    try:
+        print(f"⏰ 타이머 상태 업데이트 수신: {data}")
+        
+        object_id = data.get('object_id')
+        current_time = data.get('current_time')
+        elapsed = data.get('elapsed')
+        is_running = data.get('is_running')
+        
+        # 프로젝트 정보 가져오기 (객체 ID로부터)
+        obj = Object.query.get(object_id)
+        if not obj:
+            print(f"❌ 객체를 찾을 수 없음: {object_id}")
+            return
+        
+        scene = obj.scene
+        project = scene.project
+        project_name = project.name
+        
+        print(f"⏰ 프로젝트: {project_name}, 객체: {object_id}, 시간: {current_time}")
+        
+        # 타이머 업데이트 이벤트를 모든 관련 클라이언트에 전송
+        timer_update_data = {
+            'object_id': object_id,
+            'action': 'update',
+            'current_time': current_time,
+            'elapsed': elapsed,
+            'is_running': is_running,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        # 프로젝트 룸으로 전송 (컨트롤 패널용)
+        project_room = f'project_{project_name}'
+        socketio.emit('timer_update', timer_update_data, room=project_room)
+        print(f"⏰ 프로젝트 룸 전송 완료: {project_room}")
+        
+        # 오버레이 페이지를 위해 모든 사용자의 개별 룸으로도 전송
+        permissions = ProjectPermission.query.filter_by(project_id=project.id).all()
+        for permission in permissions:
+            user_room = f'user_{permission.user_id}'
+            socketio.emit('timer_update', timer_update_data, room=user_room)
+            print(f"⏰ 사용자 룸 전송 완료: {user_room}")
+        
+    except Exception as e:
+        print(f"타이머 상태 업데이트 처리 오류: {e}")
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()  # 데이터베이스 테이블 생성
