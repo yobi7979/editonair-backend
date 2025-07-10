@@ -2078,6 +2078,139 @@ def upload_sequence(project_name):
             return jsonify({'error': '파일이 너무 큽니다 (최대 50MB).'}), 400
 
         project_folder = get_project_folder(project_name, current_user.id)
+        sequences_path = os.path.join(project_folder, 'library', 'sequences')
+        sequence_folder = os.path.join(sequences_path, sequence_name)
+        
+        # 기존 시퀀스가 있으면 삭제
+        if os.path.exists(sequence_folder):
+            shutil.rmtree(sequence_folder)
+        
+        os.makedirs(sequence_folder, exist_ok=True)
+        
+        # 스프라이트 파일 저장
+        sprite_path = os.path.join(sequence_folder, 'sprite.png')
+        sprite_file.save(sprite_path)
+        
+        # 메타 파일 저장
+        meta_path = os.path.join(sequence_folder, 'meta.json')
+        meta_file.save(meta_path)
+        
+        # 썸네일 생성
+        thumb_path = get_sequence_thumbnail_path(project_name, sequence_name, current_user.id)
+        create_sequence_thumbnail(sprite_path, thumb_path, 150)
+        
+        return jsonify({
+            'message': '시퀀스가 업로드되었습니다.',
+            'sequence_name': sequence_name
+        })
+    except Exception as e:
+        print(f"시퀀스 업로드 오류: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+# 사용자별 업로드 라우트들
+@app.route('/api/users/<username>/projects/<project_name>/upload/image', methods=['POST'])
+@auth_required('editor')
+def upload_user_image(username, project_name):
+    try:
+        current_user = get_current_user_from_token()
+        if not current_user:
+            return jsonify({'error': 'Authentication required'}), 401
+        
+        # 사용자 조회
+        user = get_user_by_name(username)
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        # 프로젝트 조회
+        project = get_project_by_name(project_name, user.id)
+        if not project:
+            return jsonify({'error': 'Project not found'}), 404
+        
+        # 프로젝트 접근 권한 확인
+        if not check_project_permission(current_user.id, project.id, 'editor'):
+            return jsonify({'error': 'Permission denied'}), 403
+            
+        if 'file' not in request.files:
+            return jsonify({'error': '파일이 없습니다.'}), 400
+        
+        files = request.files.getlist('file')
+        overwrite = request.form.get('overwrite', 'false').lower() == 'true'
+        
+        project_folder = get_project_folder(project_name, user.id)
+        images_path = os.path.join(project_folder, 'library', 'images')
+        os.makedirs(images_path, exist_ok=True)
+        
+        uploaded_files = []
+        for file in files:
+            if not file or not allowed_image_file(file.filename):
+                continue
+                
+            if not check_file_size(file):
+                return jsonify({'error': f'파일이 너무 큽니다: {file.filename}'}), 400
+                
+            filename = safe_unicode_filename(file.filename)
+            file_path = os.path.join(images_path, filename)
+            
+            if os.path.exists(file_path) and not overwrite:
+                continue
+                
+            file.save(file_path)
+            
+            # 썸네일 생성
+            thumb_path = get_thumbnail_path(project_name, filename, user.id)
+            create_thumbnail(file_path, thumb_path)
+            
+            uploaded_files.append(filename)
+            
+        return jsonify({
+            'message': '이미지가 업로드되었습니다.',
+            'files': uploaded_files
+        })
+    except Exception as e:
+        print(f"이미지 업로드 오류: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/users/<username>/projects/<project_name>/upload/sequence', methods=['POST'])
+@auth_required('editor')
+def upload_user_sequence(username, project_name):
+    try:
+        current_user = get_current_user_from_token()
+        if not current_user:
+            return jsonify({'error': 'Authentication required'}), 401
+            
+        if 'sprite' not in request.files or 'meta' not in request.files:
+            return jsonify({'error': '스프라이트와 메타 파일이 필요합니다.'}), 400
+
+        sprite_file = request.files['sprite']
+        meta_file = request.files['meta']
+        sequence_name = request.form.get('sequence_name', '')
+
+        if not sequence_name:
+            return jsonify({'error': '시퀀스 이름이 필요합니다.'}), 400
+
+        # 파일 크기 체크
+        if not check_file_size(sprite_file) or not check_file_size(meta_file):
+            return jsonify({'error': '파일이 너무 큽니다 (최대 50MB).'}), 400
+
+        # 사용자 조회
+        user = get_user_by_name(username)
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        # 프로젝트 조회
+        project = get_project_by_name(project_name, user.id)
+        if not project:
+            return jsonify({'error': 'Project not found'}), 404
+        
+        # 프로젝트 접근 권한 확인
+        if not check_project_permission(current_user.id, project.id, 'editor'):
+            return jsonify({'error': 'Permission denied'}), 403
+
+        project_folder = get_project_folder(project_name, user.id)
         sequence_folder = os.path.join(project_folder, 'library', 'sequences', sequence_name)
         
         # 폴더가 이미 존재하면 삭제
@@ -2102,7 +2235,7 @@ def upload_sequence(project_name):
 
         # 썸네일 생성
         try:
-            thumb_path = get_sequence_thumbnail_path(project_name, sequence_name, current_user.id)
+            thumb_path = get_sequence_thumbnail_path(project_name, sequence_name, user.id)
             create_sequence_thumbnail(sprite_path, thumb_path, meta_data.get('frame_width', 150))
         except Exception as e:
             print(f"썸네일 생성 실패: {e}")
