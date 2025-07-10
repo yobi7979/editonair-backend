@@ -2278,6 +2278,111 @@ def serve_project_sequence_thumbnail(project_name, filename):
     
     return send_from_directory(sequence_thumbnails_path, decoded_filename)
 
+# 사용자별 파일 서빙 라우트들
+@app.route('/users/<username>/projects/<project_name>/library/images/<path:filename>')
+def serve_user_project_image(username, project_name, filename):
+    # URL 디코딩
+    decoded_filename = unquote(filename)
+    
+    # 사용자 조회
+    user = get_user_by_name(username)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    
+    # 프로젝트 조회
+    project = get_project_by_name(project_name, user.id)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+    
+    # 사용자별 폴더 구조 사용
+    project_folder = get_project_folder(project_name, user.id)
+    images_path = os.path.join(project_folder, 'library', 'images')
+    
+    # 파일이 존재하는지 확인
+    file_path = os.path.join(images_path, decoded_filename)
+    if not os.path.exists(file_path):
+        return jsonify({'error': 'File not found'}), 404
+    
+    return send_from_directory(images_path, decoded_filename)
+
+@app.route('/users/<username>/projects/<project_name>/library/sequences/<path:sequence_and_filename>')
+def serve_user_project_sequence_frame(username, project_name, sequence_and_filename):
+    # sequence_and_filename: '시퀀스명/프레임파일명.png'
+    decoded_path = unquote(sequence_and_filename)
+    
+    # 사용자 조회
+    user = get_user_by_name(username)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    
+    # 프로젝트 조회
+    project = get_project_by_name(project_name, user.id)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+    
+    # 사용자별 폴더 구조 사용
+    project_folder = get_project_folder(project_name, user.id)
+    sequences_path = os.path.join(project_folder, 'library', 'sequences')
+    
+    # 파일이 존재하는지 확인
+    file_path = os.path.join(sequences_path, decoded_path)
+    if not os.path.exists(file_path):
+        return jsonify({'error': 'File not found'}), 404
+    
+    return send_from_directory(sequences_path, decoded_path)
+
+@app.route('/users/<username>/projects/<project_name>/library/thumbnails/<path:filename>')
+def serve_user_project_thumbnail(username, project_name, filename):
+    # URL 디코딩
+    decoded_filename = unquote(filename)
+    
+    # 사용자 조회
+    user = get_user_by_name(username)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    
+    # 프로젝트 조회
+    project = get_project_by_name(project_name, user.id)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+    
+    # 사용자별 폴더 구조 사용
+    project_folder = get_project_folder(project_name, user.id)
+    thumbnails_path = os.path.join(project_folder, 'library', 'thumbnails')
+    
+    # 파일이 존재하는지 확인
+    file_path = os.path.join(thumbnails_path, decoded_filename)
+    if not os.path.exists(file_path):
+        return jsonify({'error': 'File not found'}), 404
+    
+    return send_from_directory(thumbnails_path, decoded_filename)
+
+@app.route('/users/<username>/projects/<project_name>/library/sequence_thumbnails/<path:filename>')
+def serve_user_project_sequence_thumbnail(username, project_name, filename):
+    # URL 디코딩
+    decoded_filename = unquote(filename)
+    
+    # 사용자 조회
+    user = get_user_by_name(username)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    
+    # 프로젝트 조회
+    project = get_project_by_name(project_name, user.id)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+    
+    # 사용자별 폴더 구조 사용
+    project_folder = get_project_folder(project_name, user.id)
+    sequence_thumbnails_path = os.path.join(project_folder, 'library', 'sequence_thumbnails')
+    
+    # 파일이 존재하는지 확인
+    file_path = os.path.join(sequence_thumbnails_path, decoded_filename)
+    if not os.path.exists(file_path):
+        return jsonify({'error': 'File not found'}), 404
+    
+    return send_from_directory(sequence_thumbnails_path, decoded_filename)
+
 @app.route('/api/projects/<project_name>/library/images/<filename>', methods=['DELETE'])
 @auth_required('editor')
 def delete_project_image(project_name, filename):
@@ -2303,6 +2408,122 @@ def delete_project_sequence(project_name, sequence_name):
     if not project:
         return jsonify({'error': 'Project not found'}), 404
     project_folder = get_project_folder(project_name, current_user.id)
+    sequences_path = os.path.join(project_folder, 'library', 'sequences')
+    sequence_folder = os.path.join(sequences_path, sequence_name)
+    if os.path.exists(sequence_folder):
+        shutil.rmtree(sequence_folder)
+        return jsonify({'message': 'Sequence deleted'}), 200
+    else:
+        return jsonify({'error': 'Sequence not found'}), 404
+
+# 사용자별 라이브러리 라우트들
+@app.route('/api/users/<username>/projects/<project_name>/library/images', methods=['GET'])
+@auth_required('viewer')
+def list_user_project_images(username, project_name):
+    current_user = get_current_user_from_token()
+    
+    # 사용자 조회
+    user = get_user_by_name(username)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    
+    # 프로젝트 조회
+    project = get_project_by_name(project_name, user.id)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+    
+    # 프로젝트 접근 권한 확인
+    if not check_project_permission(current_user.id, project.id, 'viewer'):
+        return jsonify({'error': 'Permission denied'}), 403
+    
+    project_folder = get_project_folder(project_name, user.id)
+    images_path = os.path.join(project_folder, 'library', 'images')
+    if not os.path.exists(images_path):
+        return jsonify([])
+    files = [f for f in os.listdir(images_path) if os.path.isfile(os.path.join(images_path, f))]
+    return jsonify(files)
+
+@app.route('/api/users/<username>/projects/<project_name>/library/sequences', methods=['GET'])
+@auth_required('viewer')
+def list_user_project_sequences(username, project_name):
+    current_user = get_current_user_from_token()
+    
+    # 사용자 조회
+    user = get_user_by_name(username)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    
+    # 프로젝트 조회
+    project = get_project_by_name(project_name, user.id)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+    
+    # 프로젝트 접근 권한 확인
+    if not check_project_permission(current_user.id, project.id, 'viewer'):
+        return jsonify({'error': 'Permission denied'}), 403
+    
+    project_folder = get_project_folder(project_name, user.id)
+    sequences_path = os.path.join(project_folder, 'library', 'sequences')
+    if not os.path.exists(sequences_path):
+        return jsonify([])
+    sequence_folders = [d for d in os.listdir(sequences_path) if os.path.isdir(os.path.join(sequences_path, d))]
+    result = []
+    for seq in sequence_folders:
+        seq_path = os.path.join(sequences_path, seq)
+        frames = [f for f in os.listdir(seq_path) if os.path.isfile(os.path.join(seq_path, f))]
+        frames.sort()
+        result.append({'name': seq, 'frames': frames})
+    return jsonify(result)
+
+@app.route('/api/users/<username>/projects/<project_name>/library/images/<filename>', methods=['DELETE'])
+@auth_required('editor')
+def delete_user_project_image(username, project_name, filename):
+    current_user = get_current_user_from_token()
+    
+    # 사용자 조회
+    user = get_user_by_name(username)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    
+    # 프로젝트 조회
+    project = get_project_by_name(project_name, user.id)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+    
+    # 프로젝트 접근 권한 확인
+    if not check_project_permission(current_user.id, project.id, 'editor'):
+        return jsonify({'error': 'Permission denied'}), 403
+    
+    project_folder = get_project_folder(project_name, user.id)
+    decoded_filename = unquote(filename)
+    images_path = os.path.join(project_folder, 'library', 'images')
+    file_path = os.path.join(images_path, decoded_filename)
+    if os.path.exists(file_path):
+        os.remove(file_path)
+        return jsonify({'message': 'Deleted'}), 200
+    else:
+        return jsonify({'error': 'File not found'}), 404
+
+@app.route('/api/users/<username>/projects/<project_name>/library/sequences/<sequence_name>', methods=['DELETE'])
+@auth_required('editor')
+def delete_user_project_sequence(username, project_name, sequence_name):
+    current_user = get_current_user_from_token()
+    
+    # 사용자 조회
+    user = get_user_by_name(username)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    
+    # 프로젝트 조회
+    project = get_project_by_name(project_name, user.id)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+    
+    # 프로젝트 접근 권한 확인
+    if not check_project_permission(current_user.id, project.id, 'editor'):
+        return jsonify({'error': 'Permission denied'}), 403
+    
+    project_folder = get_project_folder(project_name, user.id)
     sequences_path = os.path.join(project_folder, 'library', 'sequences')
     sequence_folder = os.path.join(sequences_path, sequence_name)
     if os.path.exists(sequence_folder):
