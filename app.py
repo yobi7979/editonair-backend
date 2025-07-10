@@ -4096,6 +4096,55 @@ def control_timer(object_id, action):
         app.logger.error(f'타이머 제어 오류: {str(e)}')
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/live/objects/<int:object_id>/timer/status', methods=['GET'])
+def get_timer_status(object_id):
+    """타이머 상태 조회 (오버레이 페이지용)"""
+    try:
+        # 프로젝트 이름을 쿼리 파라미터로 받기
+        project_name = request.args.get('project_name')
+        if not project_name:
+            return jsonify({'error': '프로젝트 이름이 필요합니다.'}), 400
+        
+        # 객체 존재 확인
+        obj = Object.query.get(object_id)
+        if not obj or obj.type != 'text':
+            return jsonify({'error': '텍스트 객체를 찾을 수 없습니다.'}), 404
+        
+        # 프로젝트 정보 확인
+        scene = obj.scene
+        project = scene.project
+        if project.name != project_name:
+            return jsonify({'error': '프로젝트가 일치하지 않습니다.'}), 404
+        
+        print(f"⏰ 타이머 상태 조회: object_id={object_id}, project_name={project_name}")
+        
+        # 타이머 상태 가져오기
+        time_format = obj.properties.get('timeFormat', 'MM:SS') if isinstance(obj.properties, dict) else 'MM:SS'
+        timer_state = live_state_manager.get_timer_state(object_id, time_format)
+        
+        print(f"⏰ 타이머 상태 조회 결과: {timer_state}")
+        
+        # timer_state가 None이면 기본값으로 초기화
+        if timer_state is None:
+            timer_state = {
+                'is_running': False,
+                'start_time': None,
+                'elapsed': 0,
+                'current_time': '00:00',
+                'time_format': time_format
+            }
+            print(f"⏰ timer_state가 None이므로 기본값으로 초기화: {timer_state}")
+        
+        return jsonify({
+            'object_id': object_id,
+            'project_name': project_name,
+            'timer_state': timer_state
+        })
+        
+    except Exception as e:
+        app.logger.error(f'타이머 상태 조회 오류: {str(e)}')
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/live/projects/<project_name>/clear', methods=['POST'])
 @auth_required('editor')
 def clear_project_live_state(project_name):

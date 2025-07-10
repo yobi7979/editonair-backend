@@ -950,6 +950,14 @@
         
         // 로컬 타이머 시작
         function startLocalTimer(objectId, serverStartTime, elapsed, timeFormat = 'MM:SS') {
+            // 기존 interval이 있으면 정리 (중복 실행 방지)
+            const prevInterval = timerIntervals.get(objectId);
+            if (prevInterval) {
+                clearInterval(prevInterval);
+                timerIntervals.delete(objectId);
+                console.log(`🔄 기존 타이머 interval 정리: ${objectId}`);
+            }
+            
             const localStartTime = Date.now() / 1000;
             const adjustedElapsed = elapsed;
             
@@ -1123,13 +1131,63 @@
             }
         }
         
+        // 서버에서 타이머 상태를 가져와서 동기화하는 함수
+        async function syncTimerStatesFromServer() {
+            console.log('🔄 서버에서 타이머 상태 동기화 시작');
+            
+            if (!currentScene) {
+                console.log('⚠️ 현재 씬이 없어서 타이머 동기화 건너뜀');
+                return;
+            }
+            
+            // 현재 씬의 타이머 객체들 찾기
+            const timerObjects = currentScene.objects.filter(obj => obj.type === 'text' && obj.properties.isTimer);
+            console.log(`🔍 타이머 객체 ${timerObjects.length}개 발견`);
+            
+            for (const timerObj of timerObjects) {
+                try {
+                    // 서버에서 타이머 상태 가져오기 (프로젝트 이름 포함)
+                    const projectName = '{{ project_name }}'; // 템플릿에서 프로젝트 이름 가져오기
+                    const response = await fetch(`/api/live/objects/${timerObj.id}/timer/status?project_name=${encodeURIComponent(projectName)}`);
+                    if (response.ok) {
+                        const timerData = await response.json();
+                        console.log(`⏰ 타이머 ${timerObj.id} 서버 상태:`, timerData);
+                        
+                        if (timerData.timer_state && timerData.timer_state.is_running) {
+                            // 타이머가 실행 중이면 로컬 타이머 시작
+                            console.log(`🚀 타이머 ${timerObj.id} 서버에서 실행 중 - 로컬 타이머 시작`);
+                            startLocalTimer(
+                                timerObj.id,
+                                timerData.timer_state.start_time,
+                                timerData.timer_state.elapsed,
+                                timerData.timer_state.time_format || 'MM:SS'
+                            );
+                        } else if (timerData.timer_state) {
+                            // 타이머가 정지 상태면 현재 시간만 표시
+                            console.log(`⏹️ 타이머 ${timerObj.id} 서버에서 정지 상태 - 현재 시간 표시`);
+                            updateTimerDisplay(timerObj.id, timerData.timer_state.current_time || '00:00');
+                        }
+                    } else {
+                        console.warn(`❌ 타이머 ${timerObj.id} 상태 가져오기 실패: ${response.status}`);
+                    }
+                } catch (error) {
+                    console.error(`❌ 타이머 ${timerObj.id} 상태 동기화 오류:`, error);
+                }
+            }
+            
+            console.log('✅ 타이머 상태 동기화 완료');
+        }
+        
         // 연결 상태를 수동으로 체크하는 함수를 전역으로 노출
         window.checkWebSocketStatus = checkConnectionStatus;
         
-        // 페이지 로드 완료 후 초기 연결 상태 체크
+        // 페이지 로드 완료 후 초기 연결 상태 체크 및 타이머 상태 동기화
         setTimeout(() => {
             console.log('🔍 Initial connection status check:');
             checkConnectionStatus();
+            
+            // 서버에서 타이머 상태 동기화
+            syncTimerStatesFromServer();
         }, 1000);
 
         // 객체 생성 함수
