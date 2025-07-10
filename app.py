@@ -4035,16 +4035,20 @@ def control_timer(object_id, action):
         timer_state = live_state_manager.get_timer_state(object_id, time_format)
         print(f"⏰ 타이머 상태 조회 결과: {timer_state}")
         
-        # 라이브 상태에도 업데이트
-        live_state_manager.update_object_property(project_name, object_id, 'content', timer_state['current_time'])
+        # 라이브 상태에도 업데이트 (timer_state가 None이 아닌 경우에만)
+        if timer_state and 'current_time' in timer_state:
+            live_state_manager.update_object_property(project_name, object_id, 'content', timer_state['current_time'])
         
         # 소켓으로 실시간 업데이트 전송
         timer_update_data = {
             'object_id': object_id,
             'action': action,
-            'timer_state': timer_state,
             'timestamp': datetime.now().isoformat()
         }
+        
+        # timer_state가 있으면 포함
+        if timer_state:
+            timer_update_data['timer_state'] = timer_state
         
         # timer_result의 데이터도 포함 (클라이언트에서 필요)
         if timer_result:
