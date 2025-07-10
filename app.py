@@ -703,7 +703,13 @@ def handle_join(data):
         user_room = f'user_{final_user_id}'
         join_room(user_room)
         print(f"✅ Socket.io: 클라이언트가 사용자 룸에도 참여 - {user_room}")
-        emit('joined', {'project': project_name, 'room': room, 'user_room': user_room})
+        
+        # room_type이 'user'인 경우 사용자별 룸만 참여했다고 응답
+        room_type = data.get('room_type')
+        if room_type == 'user':
+            emit('joined', {'project': project_name, 'room': user_room})
+        else:
+            emit('joined', {'project': project_name, 'room': room, 'user_room': user_room})
     else:
         emit('joined', {'project': project_name, 'room': room})
     
