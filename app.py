@@ -244,6 +244,34 @@ class Object(db.Model):
     def __repr__(self):
         return f'<Object {self.type}>'
 
+class CanvasPreset(db.Model):
+    __tablename__ = 'canvas_presets'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    canvas_scale = db.Column(db.Float, nullable=False)
+    scroll_left = db.Column(db.Float, nullable=False)
+    scroll_top = db.Column(db.Float, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user = db.relationship('User', backref=db.backref('canvas_presets', lazy=True))
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def __repr__(self):
+        return f'<CanvasPreset {self.name}>'
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'canvas_scale': self.canvas_scale,
+            'scroll_left': self.scroll_left,
+            'scroll_top': self.scroll_top,
+            'user_id': self.user_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
 # --- Helper Functions ---
 
 def allowed_image_file(filename):
@@ -4207,6 +4235,105 @@ def websocket_timer_update_callback(timer_update_data, project_name):
                 socketio.emit('timer_update', timer_update_data, room=user_room)
     except Exception as e:
         print(f"타이머 업데이트 WebSocket 전송 오류: {e}")
+
+# --- Canvas Preset API Endpoints ---
+
+@app.route('/api/canvas-presets', methods=['GET'])
+@jwt_required()
+def get_canvas_presets():
+    """사용자의 캔버스 프리셋 목록 조회"""
+    try:
+        current_user = get_current_user_from_token()
+        if not current_user:
+            return jsonify({'error': '인증되지 않은 사용자입니다.'}), 401
+        
+        presets = CanvasPreset.query.filter_by(user_id=current_user.id).order_by(CanvasPreset.created_at.desc()).all()
+        
+        return jsonify({
+            'presets': [preset.to_dict() for preset in presets]
+        })
+        
+    except Exception as e:
+        app.logger.error(f'캔버스 프리셋 조회 오류: {str(e)}')
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/canvas-presets', methods=['POST'])
+@jwt_required()
+def create_canvas_preset():
+    """새 캔버스 프리셋 생성"""
+    try:
+        current_user = get_current_user_from_token()
+        if not current_user:
+            return jsonify({'error': '인증되지 않은 사용자입니다.'}), 401
+        
+        data = request.get_json()
+        name = data.get('name', '').strip()
+        canvas_scale = data.get('canvas_scale', 1.0)
+        scroll_left = data.get('scroll_left', 0.0)
+        scroll_top = data.get('scroll_top', 0.0)
+        
+        if not name:
+            return jsonify({'error': '프리셋 이름이 필요합니다.'}), 400
+        
+        # 동일한 이름의 프리셋이 있는지 확인
+        existing_preset = CanvasPreset.query.filter_by(
+            user_id=current_user.id, 
+            name=name
+        ).first()
+        
+        if existing_preset:
+            return jsonify({'error': '이미 존재하는 프리셋 이름입니다.'}), 400
+        
+        # 새 프리셋 생성
+        preset = CanvasPreset(
+            name=name,
+            canvas_scale=canvas_scale,
+            scroll_left=scroll_left,
+            scroll_top=scroll_top,
+            user_id=current_user.id
+        )
+        
+        db.session.add(preset)
+        db.session.commit()
+        
+        return jsonify({
+            'message': '캔버스 프리셋이 저장되었습니다.',
+            'preset': preset.to_dict()
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f'캔버스 프리셋 생성 오류: {str(e)}')
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/canvas-presets/<int:preset_id>', methods=['DELETE'])
+@jwt_required()
+def delete_canvas_preset(preset_id):
+    """캔버스 프리셋 삭제"""
+    try:
+        current_user = get_current_user_from_token()
+        if not current_user:
+            return jsonify({'error': '인증되지 않은 사용자입니다.'}), 401
+        
+        preset = CanvasPreset.query.filter_by(
+            id=preset_id, 
+            user_id=current_user.id
+        ).first()
+        
+        if not preset:
+            return jsonify({'error': '프리셋을 찾을 수 없습니다.'}), 404
+        
+        db.session.delete(preset)
+        db.session.commit()
+        
+        return jsonify({
+            'message': '캔버스 프리셋이 삭제되었습니다.'
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f'캔버스 프리셋 삭제 오류: {str(e)}')
+        return jsonify({'error': str(e)}), 500
 
 # 라이브 상태 관리자에 콜백 함수 설정
 live_state_manager.set_websocket_callback(websocket_timer_update_callback)
