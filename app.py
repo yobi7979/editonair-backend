@@ -4012,14 +4012,32 @@ def control_timer(object_id, action):
         
         # 객체 존재 확인
         obj = Object.query.get(object_id)
-        if not obj or obj.type != 'text':
-            print(f"❌ 텍스트 객체를 찾을 수 없음: object_id={object_id}, obj={obj}, type={obj.type if obj else 'None'}")
-            return jsonify({'error': '텍스트 객체를 찾을 수 없습니다.'}), 404
+        if not obj:
+            print(f"❌ 객체를 찾을 수 없음: object_id={object_id}")
+            return jsonify({'error': '객체를 찾을 수 없습니다.'}), 404
         
-        print(f"✅ 텍스트 객체 찾음: {obj.name} (scene_id={obj.scene_id})")
+        # 타이머 객체는 text 타입이면서 properties.isTimer가 true인 객체
+        if obj.type != 'text':
+            print(f"❌ 텍스트 객체가 아님: object_id={object_id}, type={obj.type}")
+            return jsonify({'error': '텍스트 객체가 아닙니다.'}), 400
+        
+        # properties가 JSON 문자열인 경우 파싱
+        properties = obj.properties
+        if isinstance(properties, str):
+            try:
+                properties = json.loads(properties)
+            except json.JSONDecodeError:
+                properties = {}
+        
+        # 타이머 객체인지 확인
+        if not properties.get('isTimer', False):
+            print(f"❌ 타이머 객체가 아님: object_id={object_id}, isTimer={properties.get('isTimer', False)}")
+            return jsonify({'error': '타이머 객체가 아닙니다.'}), 400
+        
+        print(f"✅ 타이머 객체 찾음: {obj.name} (scene_id={obj.scene_id})")
         
         # 객체의 시간 형식 속성 가져오기
-        time_format = obj.properties.get('timeFormat', 'MM:SS') if isinstance(obj.properties, dict) else 'MM:SS'
+        time_format = properties.get('timeFormat', 'MM:SS')
         
         # 타이머 제어
         timer_result = None
@@ -4114,8 +4132,24 @@ def get_timer_status(object_id):
         
         # 객체 존재 확인
         obj = Object.query.get(object_id)
-        if not obj or obj.type != 'text':
-            return jsonify({'error': '텍스트 객체를 찾을 수 없습니다.'}), 404
+        if not obj:
+            return jsonify({'error': '객체를 찾을 수 없습니다.'}), 404
+        
+        # 타이머 객체는 text 타입이면서 properties.isTimer가 true인 객체
+        if obj.type != 'text':
+            return jsonify({'error': '텍스트 객체가 아닙니다.'}), 400
+        
+        # properties가 JSON 문자열인 경우 파싱
+        properties = obj.properties
+        if isinstance(properties, str):
+            try:
+                properties = json.loads(properties)
+            except json.JSONDecodeError:
+                properties = {}
+        
+        # 타이머 객체인지 확인
+        if not properties.get('isTimer', False):
+            return jsonify({'error': '타이머 객체가 아닙니다.'}), 400
         
         # 프로젝트 정보 확인
         scene = obj.scene
@@ -4126,7 +4160,7 @@ def get_timer_status(object_id):
         print(f"⏰ 타이머 상태 조회: object_id={object_id}, project_name={project_name}, channel_id={channel_id}")
         
         # 타이머 상태 가져오기 (채널별)
-        time_format = obj.properties.get('timeFormat', 'MM:SS') if isinstance(obj.properties, dict) else 'MM:SS'
+        time_format = properties.get('timeFormat', 'MM:SS')
         timer_state = live_state_manager.get_timer_state(object_id, time_format, project_name, channel_id)
         
         print(f"⏰ 타이머 상태 조회 결과: {timer_state}")
