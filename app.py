@@ -38,7 +38,7 @@ CORS(app, origins=["http://localhost:5173", "http://localhost:3000", "*"], suppo
 print("Starting application...")
 
 # 상수 정의
-ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'}
+ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tga'}
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
 try:
@@ -1853,6 +1853,8 @@ def create_thumbnail(image_path, thumb_path, size=(150, 150)):
     """이미지 썸네일 생성"""
     try:
         with Image.open(image_path) as img:
+            print(f"썸네일 생성 중: {image_path}, 모드: {img.mode}")
+            
             # 이미지를 RGB 모드로 변환 (알파 채널이 있는 경우 처리)
             if img.mode in ('RGBA', 'LA'):
                 background = Image.new('RGB', img.size, (255, 255, 255))
@@ -1866,9 +1868,12 @@ def create_thumbnail(image_path, thumb_path, size=(150, 150)):
             
             # WebP 형식으로 저장
             img.save(thumb_path, 'WEBP', quality=85, method=6)
+            print(f"썸네일 생성 완료: {thumb_path}")
             return True
     except Exception as e:
         print(f"썸네일 생성 실패: {e}")
+        import traceback
+        print(traceback.format_exc())
         return False
 
 def create_sequence_thumbnail(sprite_path, thumb_path, frame_width, size=(150, 150)):
@@ -1930,7 +1935,9 @@ def upload_image(project_name):
         
         uploaded_files = []
         for file in files:
+            print(f"파일 처리 중: {file.filename}")
             if not file or not allowed_image_file(file.filename):
+                print(f"허용되지 않는 파일 형식: {file.filename}")
                 continue
                 
             if not check_file_size(file):
@@ -1939,16 +1946,44 @@ def upload_image(project_name):
             filename = safe_unicode_filename(file.filename)
             file_path = os.path.join(images_path, filename)
             
+            print(f"파일 저장 경로: {file_path}")
+            
             if os.path.exists(file_path) and not overwrite:
+                print(f"파일이 이미 존재함: {file_path}")
                 continue
                 
             file.save(file_path)
+            print(f"파일 저장 완료: {file_path}")
+            
+            # TGA 파일인 경우 PNG로 변환
+            if filename.lower().endswith('.tga'):
+                try:
+                    png_filename = filename.replace('.tga', '.png')
+                    png_path = os.path.join(images_path, png_filename)
+                    print(f"TGA를 PNG로 변환 중: {file_path} -> {png_path}")
+                    
+                    with Image.open(file_path) as img:
+                        if img.mode != 'RGBA':
+                            img = img.convert('RGBA')
+                        img.save(png_path, 'PNG')
+                    
+                    # 원본 TGA 파일 삭제
+                    os.remove(file_path)
+                    filename = png_filename
+                    file_path = png_path
+                    print(f"TGA -> PNG 변환 완료: {filename}")
+                except Exception as e:
+                    print(f"TGA 변환 실패: {e}")
+                    import traceback
+                    print(traceback.format_exc())
             
             # 썸네일 생성
             thumb_path = get_thumbnail_path(project_name, filename, current_user.id)
+            print(f"썸네일 경로: {thumb_path}")
             create_thumbnail(file_path, thumb_path)
             
             uploaded_files.append(filename)
+            print(f"업로드된 파일 목록에 추가: {filename}")
             
         return jsonify({
             'message': '이미지가 업로드되었습니다.',
@@ -2192,6 +2227,28 @@ def upload_user_image(username, project_name):
                 
             file.save(file_path)
             
+            # TGA 파일인 경우 PNG로 변환
+            if filename.lower().endswith('.tga'):
+                try:
+                    png_filename = filename.replace('.tga', '.png')
+                    png_path = os.path.join(images_path, png_filename)
+                    print(f"TGA를 PNG로 변환 중: {file_path} -> {png_path}")
+                    
+                    with Image.open(file_path) as img:
+                        if img.mode != 'RGBA':
+                            img = img.convert('RGBA')
+                        img.save(png_path, 'PNG')
+                    
+                    # 원본 TGA 파일 삭제
+                    os.remove(file_path)
+                    filename = png_filename
+                    file_path = png_path
+                    print(f"TGA -> PNG 변환 완료: {filename}")
+                except Exception as e:
+                    print(f"TGA 변환 실패: {e}")
+                    import traceback
+                    print(traceback.format_exc())
+            
             # 썸네일 생성
             thumb_path = get_thumbnail_path(project_name, filename, user.id)
             create_thumbnail(file_path, thumb_path)
@@ -2299,9 +2356,14 @@ def list_project_images(project_name):
         return jsonify({'error': 'Permission denied'}), 403
     project_folder = get_project_folder(project_name, current_user.id)
     images_path = os.path.join(project_folder, 'library', 'images')
+    print(f"이미지 라이브러리 경로: {images_path}")
+    
     if not os.path.exists(images_path):
+        print(f"이미지 라이브러리 경로가 존재하지 않음: {images_path}")
         return jsonify([])
+    
     files = [f for f in os.listdir(images_path) if os.path.isfile(os.path.join(images_path, f))]
+    print(f"발견된 이미지 파일들: {files}")
     return jsonify(files)
 
 @app.route('/api/projects/<project_name>/library/sequences', methods=['GET'])
