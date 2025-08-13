@@ -1936,6 +1936,9 @@ def upload_image(project_name):
         uploaded_files = []
         for file in files:
             print(f"파일 처리 중: {file.filename}")
+            print(f"파일 확장자: {file.filename.split('.')[-1].lower() if '.' in file.filename else '확장자 없음'}")
+            print(f"허용된 확장자: {ALLOWED_IMAGE_EXTENSIONS}")
+            
             if not file or not allowed_image_file(file.filename):
                 print(f"허용되지 않는 파일 형식: {file.filename}")
                 continue
@@ -1985,6 +1988,7 @@ def upload_image(project_name):
             uploaded_files.append(filename)
             print(f"업로드된 파일 목록에 추가: {filename}")
             
+        print(f"최종 업로드된 파일 목록: {uploaded_files}")
         return jsonify({
             'message': '이미지가 업로드되었습니다.',
             'files': uploaded_files
@@ -2235,9 +2239,12 @@ def upload_user_image(username, project_name):
                     print(f"TGA를 PNG로 변환 중: {file_path} -> {png_path}")
                     
                     with Image.open(file_path) as img:
+                        print(f"TGA 이미지 정보: 모드={img.mode}, 크기={img.size}")
                         if img.mode != 'RGBA':
                             img = img.convert('RGBA')
+                            print(f"RGBA로 변환 완료: {img.mode}")
                         img.save(png_path, 'PNG')
+                        print(f"PNG 저장 완료: {png_path}")
                     
                     # 원본 TGA 파일 삭제
                     os.remove(file_path)
@@ -2248,6 +2255,8 @@ def upload_user_image(username, project_name):
                     print(f"TGA 변환 실패: {e}")
                     import traceback
                     print(traceback.format_exc())
+                    # 변환 실패 시 원본 TGA 파일 유지
+                    print(f"변환 실패로 원본 TGA 파일 유지: {filename}")
             
             # 썸네일 생성
             thumb_path = get_thumbnail_path(project_name, filename, user.id)
@@ -2255,6 +2264,7 @@ def upload_user_image(username, project_name):
             
             uploaded_files.append(filename)
             
+        print(f"최종 업로드된 파일 목록: {uploaded_files}")
         return jsonify({
             'message': '이미지가 업로드되었습니다.',
             'files': uploaded_files
